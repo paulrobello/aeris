@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
   AdditiveBlending,
-  BufferAttribute,
-  BufferGeometry,
+  ConeGeometry,
+  DoubleSide,
   DynamicDrawUsage,
-  LineSegments,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  Quaternion,
+  Vector3,
 } from "three";
 
 import type { BoidSnapshot, ColorTheme } from "@/src/core/types";
@@ -15,12 +19,16 @@ interface TrailFieldProps {
   snapshotRef: React.RefObject<BoidSnapshot>;
   count: number;
   length: number;
+  width: number;
   opacity: number;
   glow: number;
   maxSpeed: number;
   colorTheme: ColorTheme;
   resetToken: number;
 }
+
+const TRAIL_SEGMENTS = 4;
+const FORWARD = new Vector3(0, 0, 1);
 
 function themeIndex(theme: ColorTheme): number {
   return { spectral: 0, aurora: 1, solar: 2, monochrome: 3 }[theme];
@@ -30,54 +38,46 @@ export function TrailField({
   snapshotRef,
   count,
   length,
+  width,
   opacity,
   glow,
   maxSpeed,
   colorTheme,
   resetToken,
 }: TrailFieldProps) {
-  const lineRef = useRef<LineSegments>(null);
-  const materialRef = useRef<import("three").ShaderMaterial>(null);
-  const segments = Math.max(2, Math.round(length));
+  const meshRef = useRef<InstancedMesh>(null);
 
   const buffers = useMemo(() => {
-    const history = new Float32Array(count * segments * 3);
-    const historySpeed = new Float32Array(count * segments);
-    const vertexCount = count * (segments - 1) * 2;
-    const positions = new Float32Array(vertexCount * 3);
-    const life = new Float32Array(vertexCount);
-    const speed = new Float32Array(vertexCount);
+    const instanceCount = count * TRAIL_SEGMENTS;
+    const geometry = new ConeGeometry(0.5, 1, 3, 1, true);
+    geometry.rotateX(Math.PI / 2);
 
+    const speedAttribute = new InstancedBufferAttribute(
+      new Float32Array(instanceCount),
+      1,
+    );
+    const lifeAttribute = new InstancedBufferAttribute(
+      new Float32Array(instanceCount),
+      1,
+    );
+    speedAttribute.setUsage(DynamicDrawUsage);
     for (let boid = 0; boid < count; boid += 1) {
-      for (let segment = 0; segment < segments - 1; segment += 1) {
-        const vertexOffset = (boid * (segments - 1) + segment) * 2;
-        const age = segment / (segments - 1);
-        life[vertexOffset] = age;
-        life[vertexOffset + 1] = (segment + 1) / (segments - 1);
+      for (let segment = 0; segment < TRAIL_SEGMENTS; segment += 1) {
+        lifeAttribute.setX(
+          boid * TRAIL_SEGMENTS + segment,
+          (segment + 1) / TRAIL_SEGMENTS,
+        );
       }
     }
-
-    const positionAttribute = new BufferAttribute(positions, 3);
-    const speedAttribute = new BufferAttribute(speed, 1);
-    positionAttribute.setUsage(DynamicDrawUsage);
-    speedAttribute.setUsage(DynamicDrawUsage);
-
-    const geometry = new BufferGeometry();
-    geometry.setAttribute("position", positionAttribute);
-    geometry.setAttribute("aLife", new BufferAttribute(life, 1));
     geometry.setAttribute("aSpeed", speedAttribute);
+    geometry.setAttribute("aLife", lifeAttribute);
 
-    return {
-      geometry,
-      history,
-      historySpeed,
-      positions,
-      speed,
-      positionAttribute,
-      speedAttribute,
-    };
-  }, [count, segments]);
+    const history = new Float32Array(count * TRAIL_SEGMENTS * 3);
+    history.fill(Number.NaN);
+    return { geometry, history, speedAttribute };
+  }, [count]);
   const buffersRef = useRef(buffers);
+  const sampleFrameRef = useRef(0);
 
   const uniforms = useMemo(
     () => ({
@@ -88,10 +88,22 @@ export function TrailField({
     [colorTheme, glow, opacity],
   );
 
+  const workRef = useRef({
+    from: new Vector3(),
+    to: new Vector3(),
+    position: new Vector3(),
+    direction: new Vector3(),
+    quaternion: new Quaternion(),
+    scale: new Vector3(),
+    matrix: new Matrix4(),
+  });
+
   useEffect(() => {
     buffersRef.current = buffers;
     buffers.history.fill(Number.NaN);
-    buffers.historySpeed.fill(0);
+    sampleFrameRef.current = 0;
+    const mesh = meshRef.current;
+    if (mesh) mesh.instanceMatrix.setUsage(DynamicDrawUsage);
   }, [buffers, resetToken]);
 
   useEffect(
@@ -102,106 +114,99 @@ export function TrailField({
   );
 
   useFrame(() => {
+    const mesh = meshRef.current;
     const snapshot = snapshotRef.current;
-    if (!snapshot) return;
-    const runtime = buffersRef.current;
+    if (!mesh || !snapshot) return;
 
+    const runtime = buffersRef.current;
+    const work = workRef.current;
     const visibleCount = Math.min(count, snapshot.count);
+    const sampleEvery = Math.max(1, Math.round(length / TRAIL_SEGMENTS));
+    sampleFrameRef.current += 1;
+    const shouldSample = sampleFrameRef.current >= sampleEvery;
+    if (shouldSample) sampleFrameRef.current = 0;
+
     for (let boid = 0; boid < visibleCount; boid += 1) {
       const sourceOffset = boid * 3;
-      const historyOffset = boid * segments * 3;
-      const speedHistoryOffset = boid * segments;
+      const historyOffset = boid * TRAIL_SEGMENTS * 3;
+      const px = snapshot.positions[sourceOffset];
+      const py = snapshot.positions[sourceOffset + 1];
+      const pz = snapshot.positions[sourceOffset + 2];
 
-      runtime.history.copyWithin(
-        historyOffset,
-        historyOffset + 3,
-        historyOffset + segments * 3,
+      if (!Number.isFinite(runtime.history[historyOffset])) {
+        for (let sample = 0; sample < TRAIL_SEGMENTS; sample += 1) {
+          const offset = historyOffset + sample * 3;
+          runtime.history[offset] = px;
+          runtime.history[offset + 1] = py;
+          runtime.history[offset + 2] = pz;
+        }
+      } else if (shouldSample) {
+        runtime.history.copyWithin(
+          historyOffset,
+          historyOffset + 3,
+          historyOffset + TRAIL_SEGMENTS * 3,
+        );
+        const newestOffset = historyOffset + (TRAIL_SEGMENTS - 1) * 3;
+        runtime.history[newestOffset] = px;
+        runtime.history[newestOffset + 1] = py;
+        runtime.history[newestOffset + 2] = pz;
+      }
+
+      const vx = snapshot.velocities[sourceOffset];
+      const vy = snapshot.velocities[sourceOffset + 1];
+      const vz = snapshot.velocities[sourceOffset + 2];
+      const speedRatio = Math.min(
+        Math.hypot(vx, vy, vz) / Math.max(maxSpeed, 0.001),
+        1.25,
       );
-      runtime.historySpeed.copyWithin(
-        speedHistoryOffset,
-        speedHistoryOffset + 1,
-        speedHistoryOffset + segments,
-      );
 
-      const tailOffset = historyOffset + (segments - 1) * 3;
-      runtime.history[tailOffset] = snapshot.positions[sourceOffset];
-      runtime.history[tailOffset + 1] = snapshot.positions[sourceOffset + 1];
-      runtime.history[tailOffset + 2] = snapshot.positions[sourceOffset + 2];
-      runtime.historySpeed[speedHistoryOffset + segments - 1] =
-        Math.hypot(
-          snapshot.velocities[sourceOffset],
-          snapshot.velocities[sourceOffset + 1],
-          snapshot.velocities[sourceOffset + 2],
-        ) / Math.max(maxSpeed, 0.001);
+      for (let segment = 0; segment < TRAIL_SEGMENTS; segment += 1) {
+        const fromOffset = historyOffset + segment * 3;
+        work.from.fromArray(runtime.history, fromOffset);
+        if (segment === TRAIL_SEGMENTS - 1) {
+          work.to.set(px, py, pz);
+        } else {
+          work.to.fromArray(runtime.history, fromOffset + 3);
+        }
 
-      for (let segment = 0; segment < segments - 1; segment += 1) {
-        const fromHistory = historyOffset + segment * 3;
-        const toHistory = fromHistory + 3;
-        const vertexOffset = (boid * (segments - 1) + segment) * 6;
-        const speedOffset = (boid * (segments - 1) + segment) * 2;
+        work.direction.subVectors(work.to, work.from);
+        const distance = Math.max(work.direction.length(), 0.0001);
+        work.direction.multiplyScalar(1 / distance);
+        work.quaternion.setFromUnitVectors(FORWARD, work.direction);
+        work.position.addVectors(work.from, work.to).multiplyScalar(0.5);
+        const life = (segment + 1) / TRAIL_SEGMENTS;
+        const segmentWidth = width * (0.5 + life * 0.5);
+        work.scale.set(segmentWidth, segmentWidth, distance);
+        work.matrix.compose(work.position, work.quaternion, work.scale);
 
-        const fallbackX = snapshot.positions[sourceOffset];
-        const fallbackY = snapshot.positions[sourceOffset + 1];
-        const fallbackZ = snapshot.positions[sourceOffset + 2];
-        runtime.positions[vertexOffset] = Number.isFinite(
-          runtime.history[fromHistory],
-        )
-          ? runtime.history[fromHistory]
-          : fallbackX;
-        runtime.positions[vertexOffset + 1] = Number.isFinite(
-          runtime.history[fromHistory + 1],
-        )
-          ? runtime.history[fromHistory + 1]
-          : fallbackY;
-        runtime.positions[vertexOffset + 2] = Number.isFinite(
-          runtime.history[fromHistory + 2],
-        )
-          ? runtime.history[fromHistory + 2]
-          : fallbackZ;
-        runtime.positions[vertexOffset + 3] = Number.isFinite(
-          runtime.history[toHistory],
-        )
-          ? runtime.history[toHistory]
-          : fallbackX;
-        runtime.positions[vertexOffset + 4] = Number.isFinite(
-          runtime.history[toHistory + 1],
-        )
-          ? runtime.history[toHistory + 1]
-          : fallbackY;
-        runtime.positions[vertexOffset + 5] = Number.isFinite(
-          runtime.history[toHistory + 2],
-        )
-          ? runtime.history[toHistory + 2]
-          : fallbackZ;
-        runtime.speed[speedOffset] =
-          runtime.historySpeed[speedHistoryOffset + segment];
-        runtime.speed[speedOffset + 1] =
-          runtime.historySpeed[speedHistoryOffset + segment + 1];
+        const instance = boid * TRAIL_SEGMENTS + segment;
+        mesh.setMatrixAt(instance, work.matrix);
+        runtime.speedAttribute.setX(instance, speedRatio);
       }
     }
 
-    runtime.geometry.setDrawRange(0, visibleCount * (segments - 1) * 2);
-    runtime.positionAttribute.needsUpdate = true;
+    mesh.count = visibleCount * TRAIL_SEGMENTS;
+    mesh.instanceMatrix.needsUpdate = true;
     runtime.speedAttribute.needsUpdate = true;
   }, -1);
 
   return (
-    <lineSegments
-      ref={lineRef}
-      args={[buffers.geometry]}
+    <instancedMesh
+      ref={meshRef}
+      args={[buffers.geometry, undefined, count * TRAIL_SEGMENTS]}
       frustumCulled={false}
       renderOrder={2}
     >
       <shaderMaterial
-        ref={materialRef}
         vertexShader={TRAIL_VERTEX_SHADER}
         fragmentShader={TRAIL_FRAGMENT_SHADER}
         uniforms={uniforms}
         blending={AdditiveBlending}
         depthWrite={false}
         transparent
+        side={DoubleSide}
         toneMapped={false}
       />
-    </lineSegments>
+    </instancedMesh>
   );
 }

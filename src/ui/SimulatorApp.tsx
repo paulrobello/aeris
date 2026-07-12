@@ -14,7 +14,12 @@ import {
   X,
 } from "lucide-react";
 
-import { useSimulatorStore } from "@/src/core/store";
+import {
+  createSimulatorConfiguration,
+  parseSimulatorConfiguration,
+  SETTINGS_STORAGE_KEY,
+  useSimulatorStore,
+} from "@/src/core/store";
 import { BoidExperience } from "@/src/scene/BoidExperience";
 import { ControlPanel } from "@/src/ui/ControlPanel";
 import { PresetRail } from "@/src/ui/PresetRail";
@@ -48,6 +53,32 @@ export function SimulatorApp() {
   const setControlsOpen = useSimulatorStore((state) => state.setControlsOpen);
   const reseed = useSimulatorStore((state) => state.reseed);
   const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (stored) {
+        const configuration = parseSimulatorConfiguration(JSON.parse(stored));
+        if (configuration) {
+          useSimulatorStore.getState().applyConfiguration(configuration);
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    }
+
+    let previous = JSON.stringify(
+      createSimulatorConfiguration(useSimulatorStore.getState()),
+    );
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, previous);
+    return useSimulatorStore.subscribe((state) => {
+      const next = JSON.stringify(createSimulatorConfiguration(state));
+      if (next !== previous) {
+        previous = next;
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, next);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (window.matchMedia("(max-width: 900px)").matches) {
@@ -212,6 +243,19 @@ export function SimulatorApp() {
           </button>
         </div>
       </header>
+
+      {cinemaMode ? (
+        <button
+          className="cinema-exit"
+          type="button"
+          title="Exit cinema mode (C)"
+          onClick={() => setCinemaMode(false)}
+        >
+          <EyeOff size={15} aria-hidden="true" />
+          <span>Exit cinema</span>
+          <kbd>C</kbd>
+        </button>
+      ) : null}
 
       <div className="simulation-title" aria-hidden="true">
         <span>Realtime study</span>

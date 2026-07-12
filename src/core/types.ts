@@ -25,6 +25,7 @@ export interface SimulationConfig {
 export interface VisualConfig {
   boidScale: number;
   trailLength: number;
+  trailWidth: number;
   trailOpacity: number;
   glow: number;
   bloom: number;

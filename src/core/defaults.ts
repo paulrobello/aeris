@@ -21,12 +21,13 @@ export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
     visual: {
       boidScale: 0.72,
       trailLength: 34,
+      trailWidth: 0.12,
       trailOpacity: 0.48,
       glow: 1.1,
       bloom: 0.92,
       motionBlur: 0.18,
       colorTheme: "spectral",
-      quality: "balanced",
+      quality: "cinematic",
       showTrails: true,
       showConnections: false,
     },
@@ -53,6 +54,7 @@ export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
     visual: {
       boidScale: 0.58,
       trailLength: 46,
+      trailWidth: 0.1,
       trailOpacity: 0.62,
       glow: 1.48,
       bloom: 1.34,
@@ -85,6 +87,7 @@ export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
     visual: {
       boidScale: 0.88,
       trailLength: 56,
+      trailWidth: 0.14,
       trailOpacity: 0.44,
       glow: 1.3,
       bloom: 1.16,
@@ -118,6 +121,7 @@ export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
     visual: {
       boidScale: 0.82,
       trailLength: 24,
+      trailWidth: 0.09,
       trailOpacity: 0.36,
       glow: 0.8,
       bloom: 0.68,

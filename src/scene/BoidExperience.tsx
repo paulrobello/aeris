@@ -269,6 +269,15 @@ function SimulationScene() {
     [],
   );
 
+  const spectralGlow = visual.glow * (0.82 + visual.bloom * 0.28);
+  const trailLength = Math.round(
+    visual.trailLength * (0.86 + visual.motionBlur * 0.58),
+  );
+  const trailOpacity = Math.min(
+    1,
+    visual.trailOpacity * (0.9 + visual.motionBlur * 0.38),
+  );
+
   return (
     <>
       <Environments
@@ -280,7 +289,7 @@ function SimulationScene() {
         snapshotRef={snapshotRef}
         count={simulation.count}
         boidScale={visual.boidScale}
-        glow={visual.glow}
+        glow={spectralGlow}
         maxSpeed={simulation.maxSpeed}
         colorTheme={visual.colorTheme}
       />
@@ -288,9 +297,10 @@ function SimulationScene() {
         <TrailField
           snapshotRef={snapshotRef}
           count={simulation.count}
-          length={visual.trailLength}
-          opacity={visual.trailOpacity}
-          glow={visual.glow}
+          length={trailLength}
+          width={visual.trailWidth}
+          opacity={trailOpacity}
+          glow={spectralGlow}
           maxSpeed={simulation.maxSpeed}
           colorTheme={visual.colorTheme}
           resetToken={resetToken}
@@ -313,12 +323,7 @@ function SimulationScene() {
         snapshotRef={snapshotRef}
         boundaryRadius={simulation.boundaryRadius}
       />
-      <SceneEffects
-        bloom={visual.bloom}
-        glow={visual.glow}
-        motionBlur={visual.motionBlur}
-        quality={visual.quality}
-      />
+      <SceneEffects quality={visual.quality} />
     </>
   );
 }

@@ -1,20 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Aperture,
   Box,
   ChevronDown,
   CircleDot,
+  Download,
+  HelpCircle,
   MousePointer2,
   Palette,
   SlidersHorizontal,
   Sparkles,
+  Upload,
   Waypoints,
 } from "lucide-react";
 
 import { CAMERA_LABELS, ENVIRONMENT_LABELS } from "@/src/core/defaults";
-import { useSimulatorStore } from "@/src/core/store";
+import {
+  createSimulatorConfiguration,
+  parseSimulatorConfiguration,
+  useSimulatorStore,
+} from "@/src/core/store";
 import type {
   CameraMode,
   ColorTheme,
@@ -36,6 +43,32 @@ interface SliderProps {
   display?: (value: number) => string;
 }
 
+const CONTROL_HELP: Record<string, string> = {
+  "Boid count":
+    "Number of simulated agents. Higher values increase density and GPU/CPU load.",
+  "Perception radius":
+    "Distance within which each boid can sense and react to neighbors.",
+  "World radius":
+    "Radius of the invisible containment sphere around the flock.",
+  Separation: "Strength of collision avoidance between nearby boids.",
+  Alignment:
+    "Strength with which boids match the direction of nearby neighbors.",
+  Cohesion: "Strength pulling each boid toward the local flock center.",
+  "Maximum speed": "Top travel speed allowed for any boid.",
+  "Steering force": "Maximum rate at which a boid can change direction.",
+  Turbulence: "Procedural noise that adds organic, unpredictable motion.",
+  "Pointer force": "Strength of the attract or repel field under the pointer.",
+  "Temporal flow": "Global simulation speed without changing flock tuning.",
+  "Boid scale": "Physical display size of each rendered boid.",
+  "Emissive glow": "Brightness of the boid and trail shader cores.",
+  "Spectral bloom":
+    "Adds shader-level spectral intensity without the unstable HDR feedback pass.",
+  "Motion persistence": "Extends and strengthens trails to emphasize motion.",
+  "Trail length": "Number of recent simulation frames retained in each trail.",
+  "Trail width": "World-space thickness of each tapered photon trail.",
+  "Trail opacity": "Visibility of the velocity-reactive trail ribbons.",
+};
+
 function Slider({
   label,
   value,
@@ -46,10 +79,14 @@ function Slider({
   display,
 }: SliderProps) {
   const percentage = ((value - min) / (max - min)) * 100;
+  const help = CONTROL_HELP[label];
   return (
-    <label className="control-slider">
+    <label className="control-slider" title={help}>
       <span className="control-slider__meta">
-        <span>{label}</span>
+        <span className="control-label">
+          {label}
+          {help ? <HelpCircle size={11} aria-hidden="true" /> : null}
+        </span>
         <output>
           {display ? display(value) : value.toFixed(step < 1 ? 2 : 0)}
         </output>
@@ -66,6 +103,7 @@ function Slider({
           step={step}
           value={value}
           aria-label={label}
+          title={help}
           onChange={(event) => onChange(Number(event.target.value))}
         />
       </span>
@@ -87,6 +125,7 @@ function Toggle({ label, description, checked, onChange }: ToggleProps) {
       type="button"
       role="switch"
       aria-checked={checked}
+      title={`${label}: ${description}`}
       onClick={() => onChange(!checked)}
     >
       <span>
@@ -107,6 +146,7 @@ interface Option<T extends string> {
   value: T;
   label: string;
   detail?: string;
+  help?: string;
 }
 
 interface OptionGridProps<T extends string> {
@@ -132,6 +172,7 @@ function OptionGrid<T extends string>({
             className={`option-chip ${value === option.value ? "option-chip--active" : ""}`}
             type="button"
             aria-pressed={value === option.value}
+            title={option.help ?? option.detail}
             onClick={() => onChange(option.value)}
           >
             <span>{option.label}</span>
@@ -151,13 +192,33 @@ const TABS: readonly { id: TabId; label: string; icon: typeof Waypoints }[] = [
 
 const CAMERA_OPTIONS = (
   Object.entries(CAMERA_LABELS) as [CameraMode, string][]
-).map(([value, label]) => ({ value, label }));
+).map(([value, label]) => ({
+  value,
+  label,
+  help: {
+    orbit: "Manual orbit and zoom around the flock center.",
+    follow: "Track the lead boid from a damped pursuit camera.",
+    cinematic: "Automated sweeping camera designed for dramatic views.",
+    top: "Fixed overhead view of the entire containment field.",
+  }[value],
+}));
 const ENVIRONMENT_OPTIONS = (
   Object.entries(ENVIRONMENT_LABELS) as [EnvironmentMode, string][]
-).map(([value, label]) => ({ value, label }));
+).map(([value, label]) => ({
+  value,
+  label,
+  help: {
+    "deep-space": "Dark stellar volume with subtle nebula lighting.",
+    "solar-storm": "Hot, high-energy plasma environment.",
+    aurora: "Cool luminous curtains surrounding the flock.",
+    "neon-grid": "Geometric reference grid for precise observation.",
+  }[value],
+}));
 
 export function ControlPanel() {
   const [activeTab, setActiveTab] = useState<TabId>("flock");
+  const [configStatus, setConfigStatus] = useState<string>("");
+  const configInputRef = useRef<HTMLInputElement>(null);
   const simulation = useSimulatorStore((state) => state.simulation);
   const visual = useSimulatorStore((state) => state.visual);
   const cameraMode = useSimulatorStore((state) => state.cameraMode);
@@ -170,6 +231,44 @@ export function ControlPanel() {
   const setEnvironment = useSimulatorStore((state) => state.setEnvironment);
   const setPointerMode = useSimulatorStore((state) => state.setPointerMode);
   const setTimeScale = useSimulatorStore((state) => state.setTimeScale);
+  const applyConfiguration = useSimulatorStore(
+    (state) => state.applyConfiguration,
+  );
+
+  const exportConfiguration = () => {
+    const configuration = createSimulatorConfiguration(
+      useSimulatorStore.getState(),
+    );
+    const blob = new Blob([JSON.stringify(configuration, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `aeris-config-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setConfigStatus("Configuration exported");
+  };
+
+  const importConfiguration = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const configuration = parseSimulatorConfiguration(
+        JSON.parse(await file.text()),
+      );
+      if (!configuration) throw new Error("Invalid configuration");
+      applyConfiguration(configuration);
+      setConfigStatus("Configuration imported");
+    } catch {
+      setConfigStatus("Import failed — choose a valid AERIS config");
+    }
+  };
 
   const simulationSlider = (
     key: keyof SimulationConfig,
@@ -194,6 +293,7 @@ export function ControlPanel() {
     key:
       | "boidScale"
       | "trailLength"
+      | "trailWidth"
       | "trailOpacity"
       | "glow"
       | "bloom"
@@ -225,7 +325,37 @@ export function ControlPanel() {
           <span className="section-kicker">Dynamics console</span>
           <h2>Flight controls</h2>
         </div>
-        <SlidersHorizontal size={17} strokeWidth={1.5} aria-hidden="true" />
+        <div className="config-actions">
+          <button
+            type="button"
+            aria-label="Export configuration"
+            title="Export all current simulation settings as JSON"
+            onClick={exportConfiguration}
+          >
+            <Download size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Import configuration"
+            title="Import simulation settings from an AERIS JSON file"
+            onClick={() => configInputRef.current?.click()}
+          >
+            <Upload size={15} aria-hidden="true" />
+          </button>
+          <SlidersHorizontal size={17} strokeWidth={1.5} aria-hidden="true" />
+          <input
+            ref={configInputRef}
+            className="visually-hidden"
+            type="file"
+            aria-label="Configuration file"
+            accept="application/json,.json"
+            onChange={(event) => void importConfiguration(event)}
+          />
+        </div>
+      </div>
+
+      <div className="config-status" role="status" aria-live="polite">
+        {configStatus || "\u00a0"}
       </div>
 
       <div className="control-tabs" role="tablist" aria-label="Control groups">
@@ -262,7 +392,7 @@ export function ControlPanel() {
               <CircleDot size={14} aria-hidden="true" />
               <span>Population</span>
             </div>
-            {simulationSlider("count", "Boid count", 120, 1200, 20, (value) =>
+            {simulationSlider("count", "Boid count", 120, 2400, 20, (value) =>
               value.toLocaleString(),
             )}
             {simulationSlider(
@@ -334,6 +464,14 @@ export function ControlPanel() {
               80,
               1,
               (value) => `${value.toFixed(0)} frames`,
+            )}
+            {visualSlider(
+              "trailWidth",
+              "Trail width",
+              0.04,
+              0.3,
+              0.01,
+              (value) => `${value.toFixed(2)} m`,
             )}
             {visualSlider(
               "trailOpacity",
