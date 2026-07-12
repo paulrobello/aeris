@@ -72,7 +72,7 @@ export const TRAIL_VERTEX_SHADER = /* glsl */ `
   void main() {
     vLife = aLife;
     vSpeed = aSpeed;
-    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 

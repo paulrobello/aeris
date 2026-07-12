@@ -21,11 +21,12 @@ Original prompt: create me a threejs web app boid simulator, it should be highly
 - Zero browser console errors; React Three Fiber currently emits one upstream `THREE.Clock` deprecation warning.
 - Production dependency audit reports two moderate upstream Next.js/PostCSS advisories and no high or critical findings; the current Sites/vinext-pinned stack has no compatible patched upgrade yet.
 - Fixed the hardware-only running-flock blackout by removing the unstable HDR bloom pass while preserving shader intensity, post-process noise/vignette, and additive trails.
-- Replaced 1px trail lines with four-segment tapered history ribbons, doubled the default visual thickness, and added a live trail-width control.
+- Replaced 1px trail lines with continuous tapered history ribbons, doubled the default visual thickness, and added a live trail-width control.
 - Added validated versioned config import/export, automatic local-storage persistence, and a 2,400-boid tuning ceiling.
 - Added a persistent cinema-mode exit button plus contextual help for flock, visual, camera, environment, and pointer controls.
 - Cinematic quality is now the default; Chrome hardware QA holds 120 FPS at the default 620 boids and stays visually stable with 2,400 imported boids.
 - The updated gate passes formatting, lint, TypeScript, nine unit tests, production build, and two SSR tests; import/export and reload persistence passed real Chrome automation.
+- Removed ribbon seams and strobing with Catmull-Rom centerline interpolation, per-frame damped history, and temporally stabilized camera-facing vectors.
 
 ## TODO
 

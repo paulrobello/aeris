@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import {
   AdditiveBlending,
-  ConeGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  CatmullRomCurve3,
   DoubleSide,
   DynamicDrawUsage,
-  InstancedBufferAttribute,
-  InstancedMesh,
-  Matrix4,
-  Quaternion,
+  Mesh,
   Vector3,
 } from "three";
 
@@ -27,8 +26,10 @@ interface TrailFieldProps {
   resetToken: number;
 }
 
-const TRAIL_SEGMENTS = 4;
-const FORWARD = new Vector3(0, 0, 1);
+const HISTORY_POINTS = 6;
+const RIBBON_POINTS = 13;
+const VERTICES_PER_BOID = RIBBON_POINTS * 2;
+const INDICES_PER_BOID = (RIBBON_POINTS - 1) * 6;
 
 function themeIndex(theme: ColorTheme): number {
   return { spectral: 0, aurora: 1, solar: 2, monochrome: 3 }[theme];
@@ -45,39 +46,66 @@ export function TrailField({
   colorTheme,
   resetToken,
 }: TrailFieldProps) {
-  const meshRef = useRef<InstancedMesh>(null);
+  const meshRef = useRef<Mesh>(null);
 
   const buffers = useMemo(() => {
-    const instanceCount = count * TRAIL_SEGMENTS;
-    const geometry = new ConeGeometry(0.5, 1, 3, 1, true);
-    geometry.rotateX(Math.PI / 2);
+    const vertexCount = count * VERTICES_PER_BOID;
+    const positions = new Float32Array(vertexCount * 3);
+    const life = new Float32Array(vertexCount);
+    const speed = new Float32Array(vertexCount);
+    const indices = new Uint32Array(count * INDICES_PER_BOID);
 
-    const speedAttribute = new InstancedBufferAttribute(
-      new Float32Array(instanceCount),
-      1,
-    );
-    const lifeAttribute = new InstancedBufferAttribute(
-      new Float32Array(instanceCount),
-      1,
-    );
-    speedAttribute.setUsage(DynamicDrawUsage);
     for (let boid = 0; boid < count; boid += 1) {
-      for (let segment = 0; segment < TRAIL_SEGMENTS; segment += 1) {
-        lifeAttribute.setX(
-          boid * TRAIL_SEGMENTS + segment,
-          (segment + 1) / TRAIL_SEGMENTS,
-        );
+      const vertexBase = boid * VERTICES_PER_BOID;
+      const indexBase = boid * INDICES_PER_BOID;
+      for (let point = 0; point < RIBBON_POINTS; point += 1) {
+        const pointLife = point / (RIBBON_POINTS - 1);
+        life[vertexBase + point * 2] = pointLife;
+        life[vertexBase + point * 2 + 1] = pointLife;
+      }
+      for (let segment = 0; segment < RIBBON_POINTS - 1; segment += 1) {
+        const left = vertexBase + segment * 2;
+        const right = left + 1;
+        const nextLeft = left + 2;
+        const nextRight = left + 3;
+        const offset = indexBase + segment * 6;
+        indices[offset] = left;
+        indices[offset + 1] = right;
+        indices[offset + 2] = nextLeft;
+        indices[offset + 3] = right;
+        indices[offset + 4] = nextRight;
+        indices[offset + 5] = nextLeft;
       }
     }
-    geometry.setAttribute("aSpeed", speedAttribute);
-    geometry.setAttribute("aLife", lifeAttribute);
 
-    const history = new Float32Array(count * TRAIL_SEGMENTS * 3);
+    const positionAttribute = new BufferAttribute(positions, 3);
+    const speedAttribute = new BufferAttribute(speed, 1);
+    positionAttribute.setUsage(DynamicDrawUsage);
+    speedAttribute.setUsage(DynamicDrawUsage);
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", positionAttribute);
+    geometry.setAttribute("aLife", new BufferAttribute(life, 1));
+    geometry.setAttribute("aSpeed", speedAttribute);
+    geometry.setIndex(new BufferAttribute(indices, 1));
+
+    const history = new Float32Array(count * HISTORY_POINTS * 3);
+    const centerline = new Float32Array(count * RIBBON_POINTS * 3);
+    const sides = new Float32Array(count * RIBBON_POINTS * 3);
     history.fill(Number.NaN);
-    return { geometry, history, speedAttribute };
+    sides.fill(Number.NaN);
+    return {
+      geometry,
+      history,
+      centerline,
+      sides,
+      positions,
+      speed,
+      positionAttribute,
+      speedAttribute,
+    };
   }, [count]);
   const buffersRef = useRef(buffers);
-  const sampleFrameRef = useRef(0);
 
   const uniforms = useMemo(
     () => ({
@@ -89,21 +117,22 @@ export function TrailField({
   );
 
   const workRef = useRef({
-    from: new Vector3(),
-    to: new Vector3(),
-    position: new Vector3(),
-    direction: new Vector3(),
-    quaternion: new Quaternion(),
-    scale: new Vector3(),
-    matrix: new Matrix4(),
+    controls: Array.from({ length: HISTORY_POINTS + 1 }, () => new Vector3()),
+    curve: new CatmullRomCurve3([], false, "centripetal"),
+    point: new Vector3(),
+    previous: new Vector3(),
+    next: new Vector3(),
+    tangent: new Vector3(),
+    view: new Vector3(),
+    side: new Vector3(),
+    stableSide: new Vector3(),
+    fallback: new Vector3(0, 1, 0),
   });
 
   useEffect(() => {
     buffersRef.current = buffers;
     buffers.history.fill(Number.NaN);
-    sampleFrameRef.current = 0;
-    const mesh = meshRef.current;
-    if (mesh) mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    buffers.sides.fill(Number.NaN);
   }, [buffers, resetToken]);
 
   useEffect(
@@ -113,7 +142,7 @@ export function TrailField({
     [buffers.geometry],
   );
 
-  useFrame(() => {
+  useFrame((state) => {
     const mesh = meshRef.current;
     const snapshot = snapshotRef.current;
     if (!mesh || !snapshot) return;
@@ -121,35 +150,58 @@ export function TrailField({
     const runtime = buffersRef.current;
     const work = workRef.current;
     const visibleCount = Math.min(count, snapshot.count);
-    const sampleEvery = Math.max(1, Math.round(length / TRAIL_SEGMENTS));
-    sampleFrameRef.current += 1;
-    const shouldSample = sampleFrameRef.current >= sampleEvery;
-    if (shouldSample) sampleFrameRef.current = 0;
+    const follow = Math.min(1, HISTORY_POINTS / Math.max(length, 1));
 
     for (let boid = 0; boid < visibleCount; boid += 1) {
       const sourceOffset = boid * 3;
-      const historyOffset = boid * TRAIL_SEGMENTS * 3;
+      const historyOffset = boid * HISTORY_POINTS * 3;
       const px = snapshot.positions[sourceOffset];
       const py = snapshot.positions[sourceOffset + 1];
       const pz = snapshot.positions[sourceOffset + 2];
 
       if (!Number.isFinite(runtime.history[historyOffset])) {
-        for (let sample = 0; sample < TRAIL_SEGMENTS; sample += 1) {
+        for (let sample = 0; sample < HISTORY_POINTS; sample += 1) {
           const offset = historyOffset + sample * 3;
           runtime.history[offset] = px;
           runtime.history[offset + 1] = py;
           runtime.history[offset + 2] = pz;
         }
-      } else if (shouldSample) {
-        runtime.history.copyWithin(
-          historyOffset,
-          historyOffset + 3,
-          historyOffset + TRAIL_SEGMENTS * 3,
+      } else {
+        for (let sample = HISTORY_POINTS - 1; sample >= 0; sample -= 1) {
+          const offset = historyOffset + sample * 3;
+          const targetOffset = offset + 3;
+          const targetX =
+            sample === HISTORY_POINTS - 1 ? px : runtime.history[targetOffset];
+          const targetY =
+            sample === HISTORY_POINTS - 1
+              ? py
+              : runtime.history[targetOffset + 1];
+          const targetZ =
+            sample === HISTORY_POINTS - 1
+              ? pz
+              : runtime.history[targetOffset + 2];
+          runtime.history[offset] +=
+            (targetX - runtime.history[offset]) * follow;
+          runtime.history[offset + 1] +=
+            (targetY - runtime.history[offset + 1]) * follow;
+          runtime.history[offset + 2] +=
+            (targetZ - runtime.history[offset + 2]) * follow;
+        }
+      }
+
+      for (let sample = 0; sample < HISTORY_POINTS; sample += 1) {
+        work.controls[sample].fromArray(
+          runtime.history,
+          historyOffset + sample * 3,
         );
-        const newestOffset = historyOffset + (TRAIL_SEGMENTS - 1) * 3;
-        runtime.history[newestOffset] = px;
-        runtime.history[newestOffset + 1] = py;
-        runtime.history[newestOffset + 2] = pz;
+      }
+      work.controls[HISTORY_POINTS].set(px, py, pz);
+      work.curve.points = work.controls;
+
+      const centerlineOffset = boid * RIBBON_POINTS * 3;
+      for (let point = 0; point < RIBBON_POINTS; point += 1) {
+        work.curve.getPoint(point / (RIBBON_POINTS - 1), work.point);
+        work.point.toArray(runtime.centerline, centerlineOffset + point * 3);
       }
 
       const vx = snapshot.velocities[sourceOffset];
@@ -159,43 +211,66 @@ export function TrailField({
         Math.hypot(vx, vy, vz) / Math.max(maxSpeed, 0.001),
         1.25,
       );
+      const vertexBase = boid * VERTICES_PER_BOID;
 
-      for (let segment = 0; segment < TRAIL_SEGMENTS; segment += 1) {
-        const fromOffset = historyOffset + segment * 3;
-        work.from.fromArray(runtime.history, fromOffset);
-        if (segment === TRAIL_SEGMENTS - 1) {
-          work.to.set(px, py, pz);
-        } else {
-          work.to.fromArray(runtime.history, fromOffset + 3);
+      for (let point = 0; point < RIBBON_POINTS; point += 1) {
+        const centerOffset = centerlineOffset + point * 3;
+        work.point.fromArray(runtime.centerline, centerOffset);
+        work.previous.fromArray(
+          runtime.centerline,
+          centerlineOffset + Math.max(0, point - 1) * 3,
+        );
+        work.next.fromArray(
+          runtime.centerline,
+          centerlineOffset + Math.min(RIBBON_POINTS - 1, point + 1) * 3,
+        );
+        work.tangent.subVectors(work.next, work.previous);
+        work.view.subVectors(state.camera.position, work.point);
+        work.side.crossVectors(work.tangent, work.view);
+        if (work.side.lengthSq() < 0.000001) {
+          work.side.crossVectors(work.tangent, work.fallback);
         }
+        if (work.side.lengthSq() < 0.000001) work.side.set(1, 0, 0);
 
-        work.direction.subVectors(work.to, work.from);
-        const distance = Math.max(work.direction.length(), 0.0001);
-        work.direction.multiplyScalar(1 / distance);
-        work.quaternion.setFromUnitVectors(FORWARD, work.direction);
-        work.position.addVectors(work.from, work.to).multiplyScalar(0.5);
-        const life = (segment + 1) / TRAIL_SEGMENTS;
-        const segmentWidth = width * (0.5 + life * 0.5);
-        work.scale.set(segmentWidth, segmentWidth, distance);
-        work.matrix.compose(work.position, work.quaternion, work.scale);
+        const sideOffset = centerlineOffset + point * 3;
+        work.side.normalize();
+        if (Number.isFinite(runtime.sides[sideOffset])) {
+          work.stableSide.fromArray(runtime.sides, sideOffset);
+          if (work.side.dot(work.stableSide) < 0) work.side.multiplyScalar(-1);
+          work.side.lerp(work.stableSide, 0.35).normalize();
+        }
+        work.side.toArray(runtime.sides, sideOffset);
 
-        const instance = boid * TRAIL_SEGMENTS + segment;
-        mesh.setMatrixAt(instance, work.matrix);
-        runtime.speedAttribute.setX(instance, speedRatio);
+        const pointLife = point / (RIBBON_POINTS - 1);
+        const halfWidth = width * (0.12 + pointLife * 0.38);
+        work.side.multiplyScalar(halfWidth);
+        const positionOffset = (vertexBase + point * 2) * 3;
+        runtime.positions[positionOffset] = work.point.x - work.side.x;
+        runtime.positions[positionOffset + 1] = work.point.y - work.side.y;
+        runtime.positions[positionOffset + 2] = work.point.z - work.side.z;
+        runtime.positions[positionOffset + 3] = work.point.x + work.side.x;
+        runtime.positions[positionOffset + 4] = work.point.y + work.side.y;
+        runtime.positions[positionOffset + 5] = work.point.z + work.side.z;
+        runtime.speed[vertexBase + point * 2] = speedRatio;
+        runtime.speed[vertexBase + point * 2 + 1] = speedRatio;
       }
     }
 
-    mesh.count = visibleCount * TRAIL_SEGMENTS;
-    mesh.instanceMatrix.needsUpdate = true;
+    runtime.geometry.setDrawRange(
+      0,
+      length <= 0 ? 0 : visibleCount * INDICES_PER_BOID,
+    );
+    runtime.positionAttribute.needsUpdate = true;
     runtime.speedAttribute.needsUpdate = true;
   }, -1);
 
   return (
-    <instancedMesh
+    <mesh
       ref={meshRef}
-      args={[buffers.geometry, undefined, count * TRAIL_SEGMENTS]}
+      geometry={buffers.geometry}
       frustumCulled={false}
       renderOrder={2}
+      dispose={null}
     >
       <shaderMaterial
         vertexShader={TRAIL_VERTEX_SHADER}
@@ -207,6 +282,6 @@ export function TrailField({
         side={DoubleSide}
         toneMapped={false}
       />
-    </instancedMesh>
+    </mesh>
   );
 }
