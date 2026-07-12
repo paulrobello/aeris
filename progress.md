@@ -27,6 +27,7 @@ Original prompt: create me a threejs web app boid simulator, it should be highly
 - Cinematic quality is now the default; Chrome hardware QA holds 120 FPS at the default 620 boids and stays visually stable with 2,400 imported boids.
 - The updated gate passes formatting, lint, TypeScript, nine unit tests, production build, and two SSR tests; import/export and reload persistence passed real Chrome automation.
 - Removed ribbon seams and strobing with Catmull-Rom centerline interpolation, per-frame damped history, and temporally stabilized camera-facing vectors.
+- Improved paused-state readability with a high-contrast glass panel, stronger type, and a prominent Resume action verified over a dense flock.
 
 ## TODO
 
