@@ -12,6 +12,7 @@ import type {
 } from "./types";
 
 export const SETTINGS_STORAGE_KEY = "aeris:simulator-settings";
+export const USER_PROGRAM_STORAGE_KEY = "aeris:user-flight-program";
 
 export interface SimulatorConfiguration {
   version: 1;
@@ -37,6 +38,7 @@ interface SimulatorState {
   timeScale: number;
   resetToken: number;
   stats: SimulationStats;
+  userProgram: SimulatorConfiguration | null;
   setSimulation: (patch: Partial<SimulationConfig>) => void;
   setVisual: (patch: Partial<VisualConfig>) => void;
   setCameraMode: (mode: CameraMode) => void;
@@ -49,6 +51,8 @@ interface SimulatorState {
   setStats: (stats: SimulationStats) => void;
   applyPreset: (preset: PresetId) => void;
   applyConfiguration: (configuration: SimulatorConfiguration) => void;
+  setUserProgram: (configuration: SimulatorConfiguration | null) => void;
+  saveUserProgram: () => void;
   reseed: () => void;
 }
 
@@ -70,6 +74,7 @@ const PRESET_IDS: readonly PresetId[] = [
   "singularity",
   "solar-drift",
   "zenith",
+  "user",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -200,6 +205,7 @@ export const useSimulatorStore = create<SimulatorState>((set) => ({
     averageSpeed: 0,
     coherence: 0,
   },
+  userProgram: null,
   setSimulation: (patch) =>
     set((state) => ({
       simulation: { ...state.simulation, ...patch },
@@ -218,6 +224,22 @@ export const useSimulatorStore = create<SimulatorState>((set) => ({
   setTimeScale: (timeScale) => set({ timeScale }),
   setStats: (stats) => set({ stats }),
   applyPreset: (presetId) => {
+    if (presetId === "user") {
+      set((state) => {
+        if (!state.userProgram) return { activePreset: "user" };
+        return {
+          simulation: state.userProgram.simulation,
+          visual: state.userProgram.visual,
+          cameraMode: state.userProgram.cameraMode,
+          environment: state.userProgram.environment,
+          pointerMode: state.userProgram.pointerMode,
+          activePreset: "user",
+          timeScale: state.userProgram.timeScale,
+          resetToken: state.resetToken + 1,
+        };
+      });
+      return;
+    }
     const preset = PRESETS[presetId];
     set((state) => ({
       simulation: preset.simulation,
@@ -238,6 +260,15 @@ export const useSimulatorStore = create<SimulatorState>((set) => ({
       activePreset: configuration.activePreset,
       timeScale: configuration.timeScale,
       resetToken: state.resetToken + 1,
+    })),
+  setUserProgram: (userProgram) => set({ userProgram }),
+  saveUserProgram: () =>
+    set((state) => ({
+      userProgram: {
+        ...createSimulatorConfiguration(state),
+        activePreset: "user",
+      },
+      activePreset: "user",
     })),
   reseed: () => set((state) => ({ resetToken: state.resetToken + 1 })),
 }));

@@ -1,6 +1,9 @@
 import type { SimulatorPreset } from "./types";
 
-export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
+export const PRESETS: Record<
+  Exclude<SimulatorPreset["id"], "user">,
+  SimulatorPreset
+> = {
   murmuration: {
     id: "murmuration",
     name: "Murmuration",
@@ -137,6 +140,23 @@ export const PRESETS: Record<SimulatorPreset["id"], SimulatorPreset> = {
 };
 
 export const DEFAULT_PRESET = PRESETS.murmuration;
+
+export const USER_PRESET: SimulatorPreset = {
+  id: "user",
+  name: "User",
+  eyebrow: "Custom / Local",
+  description:
+    "Tune any control, then save and recall your own flight program.",
+  simulation: DEFAULT_PRESET.simulation,
+  visual: DEFAULT_PRESET.visual,
+  camera: DEFAULT_PRESET.camera,
+  environment: DEFAULT_PRESET.environment,
+};
+
+export const FLIGHT_PROGRAMS: readonly SimulatorPreset[] = [
+  ...Object.values(PRESETS),
+  USER_PRESET,
+];
 
 export const CAMERA_LABELS = {
   orbit: "Orbital",

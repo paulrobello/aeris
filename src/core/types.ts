@@ -54,7 +54,8 @@ export interface SimulatorPreset {
   environment: EnvironmentMode;
 }
 
-export type PresetId = "murmuration" | "singularity" | "solar-drift" | "zenith";
+export type PresetId =
+  "murmuration" | "singularity" | "solar-drift" | "zenith" | "user";
 
 export interface BoidSnapshot {
   positions: Float32Array;

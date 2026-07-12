@@ -28,6 +28,7 @@ Original prompt: create me a threejs web app boid simulator, it should be highly
 - The updated gate passes formatting, lint, TypeScript, nine unit tests, production build, and two SSR tests; import/export and reload persistence passed real Chrome automation.
 - Removed ribbon seams and strobing with Catmull-Rom centerline interpolation, per-frame damped history, and temporally stabilized camera-facing vectors.
 - Improved paused-state readability with a high-contrast glass panel, stronger type, and a prominent Resume action verified over a dense flock.
+- Added Flight Program 05: a local User slot with explicit save/overwrite status and full simulation, visual, camera, environment, pointer, and time-setting restore across reloads.
 
 ## TODO
 

@@ -428,6 +428,14 @@ input:focus-visible {
   padding: 5px;
 }
 
+.preset-card-slot {
+  position: relative;
+}
+
+.preset-card-slot + .preset-card-slot {
+  border-top: 1px solid rgba(215, 231, 255, 0.06);
+}
+
 .preset-card {
   position: relative;
   display: grid;
@@ -449,8 +457,8 @@ input:focus-visible {
     background 180ms ease;
 }
 
-.preset-card + .preset-card {
-  border-top: 1px solid rgba(215, 231, 255, 0.06);
+.preset-card--user {
+  padding-right: 66px;
 }
 
 .preset-card:hover {
@@ -543,6 +551,34 @@ input:focus-visible {
 .preset-card--active .preset-card__signal {
   background: linear-gradient(180deg, var(--cyan), var(--violet));
   box-shadow: 0 0 10px var(--cyan);
+}
+
+.preset-card__save {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 25px;
+  padding: 0 7px;
+  translate: 0 -50%;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  border-radius: 6px;
+  color: rgba(165, 243, 252, 0.78);
+  background: rgba(8, 28, 35, 0.82);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.preset-card__save:hover {
+  border-color: rgba(103, 232, 249, 0.48);
+  color: #eaffff;
+  background: rgba(18, 61, 72, 0.9);
 }
 
 .control-panel {
@@ -1227,8 +1263,12 @@ input:focus-visible {
 
   .preset-rail__list {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 3px;
+  }
+
+  .preset-card-slot + .preset-card-slot {
+    border-top: 0;
   }
 
   .preset-card {
@@ -1240,8 +1280,9 @@ input:focus-visible {
     text-align: center;
   }
 
-  .preset-card + .preset-card {
-    border-top: 0;
+  .preset-card--user {
+    padding-right: 5px;
+    padding-bottom: 20px;
   }
   .preset-card__number,
   .preset-card__eyebrow,
@@ -1255,6 +1296,15 @@ input:focus-visible {
   }
   .preset-card__name {
     font-size: 8px;
+  }
+  .preset-card__save {
+    top: auto;
+    right: 50%;
+    bottom: 3px;
+    height: 16px;
+    padding: 0 5px;
+    translate: 50% 0;
+    font-size: 6px;
   }
 
   .control-panel {

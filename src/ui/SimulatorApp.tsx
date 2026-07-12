@@ -18,6 +18,7 @@ import {
   createSimulatorConfiguration,
   parseSimulatorConfiguration,
   SETTINGS_STORAGE_KEY,
+  USER_PROGRAM_STORAGE_KEY,
   useSimulatorStore,
 } from "@/src/core/store";
 import { BoidExperience } from "@/src/scene/BoidExperience";
@@ -55,6 +56,21 @@ export function SimulatorApp() {
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
+    const store = useSimulatorStore.getState();
+    try {
+      const storedUserProgram = window.localStorage.getItem(
+        USER_PROGRAM_STORAGE_KEY,
+      );
+      if (storedUserProgram) {
+        const userProgram = parseSimulatorConfiguration(
+          JSON.parse(storedUserProgram),
+        );
+        if (userProgram) store.setUserProgram(userProgram);
+      }
+    } catch {
+      window.localStorage.removeItem(USER_PROGRAM_STORAGE_KEY);
+    }
+
     try {
       const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (stored) {
@@ -67,15 +83,31 @@ export function SimulatorApp() {
       window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
     }
 
-    let previous = JSON.stringify(
+    let previousSettings = JSON.stringify(
       createSimulatorConfiguration(useSimulatorStore.getState()),
     );
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, previous);
+    let previousUserProgram = JSON.stringify(
+      useSimulatorStore.getState().userProgram,
+    );
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, previousSettings);
     return useSimulatorStore.subscribe((state) => {
-      const next = JSON.stringify(createSimulatorConfiguration(state));
-      if (next !== previous) {
-        previous = next;
-        window.localStorage.setItem(SETTINGS_STORAGE_KEY, next);
+      const nextSettings = JSON.stringify(createSimulatorConfiguration(state));
+      if (nextSettings !== previousSettings) {
+        previousSettings = nextSettings;
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, nextSettings);
+      }
+
+      const nextUserProgram = JSON.stringify(state.userProgram);
+      if (nextUserProgram !== previousUserProgram) {
+        previousUserProgram = nextUserProgram;
+        if (state.userProgram) {
+          window.localStorage.setItem(
+            USER_PROGRAM_STORAGE_KEY,
+            nextUserProgram,
+          );
+        } else {
+          window.localStorage.removeItem(USER_PROGRAM_STORAGE_KEY);
+        }
       }
     });
   }, []);
@@ -135,6 +167,7 @@ export function SimulatorApp() {
         controlsOpen: state.controlsOpen,
         timeScale: state.timeScale,
         resetToken: state.resetToken,
+        userProgramSaved: Boolean(state.userProgram),
         stats: state.stats,
         scene: window.__aerisSceneState ?? null,
       });
