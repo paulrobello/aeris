@@ -1,0 +1,26 @@
+Original prompt: create me a threejs web app boid simulator, it should be highly configurable / tunable with next gen graphics, highly polished dark mode ui, shaders for amazing boid / trails, multiple camera modes, multiple environments. I want peoples minds to be blown away, you need to bring your AAA game on, make me proud
+
+## Product direction
+
+- Build a scene-first cinematic flock laboratory named AERIS.
+- Keep all controls live and meaningful: flock behavior, time, pointer force, visuals, cameras, environments, quality, and presets.
+- Favor GPU instancing and shader-driven effects while keeping the simulation deterministic and testable.
+- Required automation seam: `window.render_game_to_text()` and `window.advanceTime(ms)`.
+
+## Progress
+
+- Initialized the Sites-compatible vinext scaffold and reserved port 4203.
+- Confirmed dependency compatibility and pinned a valid Three.js/postprocessing stack.
+- Added shared simulator types, defaults, presets, and Zustand state contracts.
+- Implemented the deterministic spatial-hash boid engine with collision-safe buckets and six behavioral tests.
+- Implemented instanced shader boids, additive trails, proximity links, four environments, four camera modes, post effects, and pointer interaction.
+- Implemented the responsive AERIS control surface, telemetry, presets, accessibility, shortcuts, and browser automation hooks.
+- Added a bespoke AERIS social card and derived application icon.
+- `make checkall` passes: formatting, lint, TypeScript, six simulation tests, production build, and two SSR tests.
+- Browser QA passed for desktop and mobile layouts, all presets, live sliders, pause determinism, camera/environment/pointer changes, cinema mode, and control visibility.
+- Zero browser console errors; React Three Fiber currently emits one upstream `THREE.Clock` deprecation warning.
+- Production dependency audit reports two moderate upstream Next.js/PostCSS advisories and no high or critical findings; the current Sites/vinext-pinned stack has no compatible patched upgrade yet.
+
+## TODO
+
+- None for the requested first release.

@@ -1,0 +1,6 @@
+.next/
+.vinext/
+dist/
+node_modules/
+output/
+public/og.png
