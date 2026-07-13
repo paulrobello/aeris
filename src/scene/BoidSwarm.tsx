@@ -40,25 +40,34 @@ export function BoidSwarm({
   const meshRef = useRef<InstancedMesh>(null);
   const materialRef = useRef<import("three").ShaderMaterial>(null);
 
-  const { geometry, speedAttribute } = useMemo(() => {
+  const { geometry, flockAttribute, speedAttribute } = useMemo(() => {
     const nextGeometry = new ConeGeometry(0.34, 1.45, 3, 1, false);
     nextGeometry.rotateX(Math.PI / 2);
     nextGeometry.translate(0, 0, 0.18);
     nextGeometry.computeVertexNormals();
 
     const speeds = new Float32Array(count);
+    const flocks = new Float32Array(count);
     const seeds = new Float32Array(count);
     for (let index = 0; index < count; index += 1) {
       seeds[index] = ((index * 16807) % 2147483647) / 2147483647;
     }
 
     const nextSpeedAttribute = new InstancedBufferAttribute(speeds, 1);
+    const nextFlockAttribute = new InstancedBufferAttribute(flocks, 1);
     nextSpeedAttribute.setUsage(DynamicDrawUsage);
+    nextFlockAttribute.setUsage(DynamicDrawUsage);
     nextGeometry.setAttribute("aSpeed", nextSpeedAttribute);
+    nextGeometry.setAttribute("aFlock", nextFlockAttribute);
     nextGeometry.setAttribute("aSeed", new InstancedBufferAttribute(seeds, 1));
 
-    return { geometry: nextGeometry, speedAttribute: nextSpeedAttribute };
+    return {
+      geometry: nextGeometry,
+      flockAttribute: nextFlockAttribute,
+      speedAttribute: nextSpeedAttribute,
+    };
   }, [count]);
+  const flockAttributeRef = useRef(flockAttribute);
   const speedAttributeRef = useRef(speedAttribute);
 
   const uniforms = useMemo(
@@ -81,6 +90,7 @@ export function BoidSwarm({
 
   useEffect(() => {
     const mesh = meshRef.current;
+    flockAttributeRef.current = flockAttribute;
     speedAttributeRef.current = speedAttribute;
     if (mesh) {
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -88,13 +98,14 @@ export function BoidSwarm({
     return () => {
       geometry.dispose();
     };
-  }, [geometry, speedAttribute]);
+  }, [flockAttribute, geometry, speedAttribute]);
 
   useFrame((state) => {
     const mesh = meshRef.current;
     const material = materialRef.current;
     const snapshot = snapshotRef.current;
     if (!mesh || !material || !snapshot) return;
+    const flockValues = flockAttributeRef.current;
     const speedValues = speedAttributeRef.current;
     const work = workRef.current;
 
@@ -125,11 +136,13 @@ export function BoidSwarm({
       work.scale.set(width, width, boidScale * (0.9 + normalizedSpeed * 0.48));
       work.matrix.compose(work.position, work.quaternion, work.scale);
       mesh.setMatrixAt(index, work.matrix);
+      flockValues.setX(index, snapshot.flockIds[index]);
       speedValues.setX(index, speed);
     }
 
     mesh.count = visibleCount;
     mesh.instanceMatrix.needsUpdate = true;
+    flockValues.needsUpdate = true;
     speedValues.needsUpdate = true;
   }, -1);
 

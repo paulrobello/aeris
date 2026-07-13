@@ -30,6 +30,17 @@ Original prompt: create me a threejs web app boid simulator, it should be highly
 - Improved paused-state readability with a high-contrast glass panel, stronger type, and a prominent Resume action verified over a dense flock.
 - Added Flight Program 05: a local User slot with explicit save/overwrite status and full simulation, visual, camera, environment, pointer, and time-setting restore across reloads.
 
+## 2026-07-12 multi-flock enhancement
+
+- Request: add options to specify number of flocks, make separate flocks avoid each other with a new avoidance-strength slider, and give separate flocks separate colors.
+- Grounded the request in the current simulation, rendering, and controls/configuration seams.
+- Added deterministic, balanced flock assignment with same-flock flocking forces and independently tunable cross-flock avoidance.
+- Added persisted `Flock count` and `Flock avoidance` sliders with backward-compatible migration for existing saved configurations.
+- Added stable per-flock hue rotation across boids, trails, and proximity links while preserving the original single-flock theme shaders.
+- `make checkall` passes: formatting, lint, TypeScript, 17 unit tests, production build, and two SSR tests.
+- Chrome QA passed at eight flocks with maximum avoidance: controls and text diagnostics agree, distinct flock colors render correctly, and no new console errors were recorded.
+- The deterministic Playwright game loop completed two interaction/capture iterations with no error artifacts and confirmed the original single-flock appearance remains intact.
+
 ## TODO
 
-- None for the requested first release.
+- None for the multi-flock enhancement.

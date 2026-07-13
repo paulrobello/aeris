@@ -1,9 +1,30 @@
+export const FLOCK_COLOR_GLSL = /* glsl */ `
+  vec3 rotateHue(vec3 color, float angle) {
+    const vec3 axis = vec3(0.57735026919);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+    return clamp(
+      color * cosine + cross(axis, color) * sine + axis * dot(axis, color) * (1.0 - cosine),
+      0.0,
+      1.0
+    );
+  }
+
+  vec3 flockColor(vec3 baseColor, float flockId) {
+    if (flockId < 0.5) return baseColor;
+    float hueRotation = fract(flockId * 0.61803398875) * 6.28318530718;
+    return rotateHue(baseColor, hueRotation);
+  }
+`;
+
 export const BOID_VERTEX_SHADER = /* glsl */ `
   attribute float aSpeed;
   attribute float aSeed;
+  attribute float aFlock;
 
   varying float vSpeed;
   varying float vSeed;
+  varying float vFlock;
   varying float vFresnel;
   varying float vPulse;
 
@@ -17,6 +38,7 @@ export const BOID_VERTEX_SHADER = /* glsl */ `
 
     vSpeed = clamp(aSpeed / max(uMaxSpeed, 0.001), 0.0, 1.4);
     vSeed = aSeed;
+    vFlock = aFlock;
     vFresnel = pow(1.0 - abs(dot(transformedNormal, viewDirection)), 2.2);
     vPulse = 0.82 + 0.18 * sin(uTime * 4.0 + aSeed * 19.0);
 
@@ -29,6 +51,7 @@ export const BOID_FRAGMENT_SHADER = /* glsl */ `
 
   varying float vSpeed;
   varying float vSeed;
+  varying float vFlock;
   varying float vFresnel;
   varying float vPulse;
 
@@ -52,8 +75,13 @@ export const BOID_FRAGMENT_SHADER = /* glsl */ `
     return mix(vec3(0.44, 0.66, 0.82), vec3(0.96, 1.0, 1.0), speed);
   }
 
+  ${FLOCK_COLOR_GLSL}
+
   void main() {
-    vec3 color = themeColor(clamp(vSpeed, 0.0, 1.0), vSeed);
+    vec3 color = flockColor(
+      themeColor(clamp(vSpeed, 0.0, 1.0), vSeed),
+      vFlock
+    );
     float core = 0.72 + vSpeed * 0.55;
     float rim = vFresnel * (0.7 + uGlow * 0.7);
     color *= (core + rim) * vPulse;
@@ -65,13 +93,16 @@ export const BOID_FRAGMENT_SHADER = /* glsl */ `
 export const TRAIL_VERTEX_SHADER = /* glsl */ `
   attribute float aLife;
   attribute float aSpeed;
+  attribute float aFlock;
 
   varying float vLife;
   varying float vSpeed;
+  varying float vFlock;
 
   void main() {
     vLife = aLife;
     vSpeed = aSpeed;
+    vFlock = aFlock;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -81,6 +112,7 @@ export const TRAIL_FRAGMENT_SHADER = /* glsl */ `
 
   varying float vLife;
   varying float vSpeed;
+  varying float vFlock;
 
   uniform float uOpacity;
   uniform float uTheme;
@@ -97,9 +129,11 @@ export const TRAIL_FRAGMENT_SHADER = /* glsl */ `
     return mix(vec3(0.22, 0.5, 0.72), vec3(0.9, 1.0, 1.0), speed);
   }
 
+  ${FLOCK_COLOR_GLSL}
+
   void main() {
     float fade = smoothstep(0.0, 0.13, vLife) * pow(vLife, 1.65);
-    vec3 color = themeColor(clamp(vSpeed, 0.0, 1.0));
+    vec3 color = flockColor(themeColor(clamp(vSpeed, 0.0, 1.0)), vFlock);
     color *= 0.75 + uGlow * 0.42;
     gl_FragColor = vec4(color, fade * uOpacity);
   }

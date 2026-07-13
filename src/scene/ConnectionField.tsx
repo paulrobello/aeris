@@ -8,6 +8,7 @@ import {
 } from "three";
 
 import type { BoidSnapshot, ColorTheme } from "@/src/core/types";
+import { FLOCK_COLOR_GLSL } from "./shaders";
 
 interface ConnectionFieldProps {
   snapshotRef: React.RefObject<BoidSnapshot>;
@@ -21,19 +22,12 @@ const MAX_CONNECTIONS = 720;
 
 const VERTEX_SHADER = /* glsl */ `
   attribute float aStrength;
+  attribute float aFlock;
   varying float vStrength;
-
-  void main() {
-    vStrength = aStrength;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const FRAGMENT_SHADER = /* glsl */ `
-  precision highp float;
-
-  varying float vStrength;
+  varying vec3 vColor;
   uniform float uTheme;
+
+  ${FLOCK_COLOR_GLSL}
 
   vec3 themeColor() {
     if (uTheme < 0.5) return vec3(0.22, 0.78, 1.0);
@@ -43,8 +37,21 @@ const FRAGMENT_SHADER = /* glsl */ `
   }
 
   void main() {
+    vStrength = aStrength;
+    vColor = flockColor(themeColor(), aFlock);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const FRAGMENT_SHADER = /* glsl */ `
+  precision highp float;
+
+  varying float vStrength;
+  varying vec3 vColor;
+
+  void main() {
     float alpha = pow(clamp(vStrength, 0.0, 1.0), 1.8) * 0.34;
-    gl_FragColor = vec4(themeColor(), alpha);
+    gl_FragColor = vec4(vColor, alpha);
   }
 `;
 
@@ -62,22 +69,28 @@ export function ConnectionField({
   const buffers = useMemo(() => {
     const positions = new Float32Array(MAX_CONNECTIONS * 2 * 3);
     const strengths = new Float32Array(MAX_CONNECTIONS * 2);
+    const flocks = new Float32Array(MAX_CONNECTIONS * 2);
     const positionAttribute = new BufferAttribute(positions, 3);
     const strengthAttribute = new BufferAttribute(strengths, 1);
+    const flockAttribute = new BufferAttribute(flocks, 1);
     positionAttribute.setUsage(DynamicDrawUsage);
     strengthAttribute.setUsage(DynamicDrawUsage);
+    flockAttribute.setUsage(DynamicDrawUsage);
 
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", positionAttribute);
     geometry.setAttribute("aStrength", strengthAttribute);
+    geometry.setAttribute("aFlock", flockAttribute);
     geometry.setDrawRange(0, 0);
 
     return {
       geometry,
       positions,
       strengths,
+      flocks,
       positionAttribute,
       strengthAttribute,
+      flockAttribute,
     };
   }, []);
   const buffersRef = useRef(buffers);
@@ -138,6 +151,8 @@ export function ConnectionField({
         const strengthOffset = connectionCount * 2;
         runtime.strengths[strengthOffset] = strength;
         runtime.strengths[strengthOffset + 1] = strength;
+        runtime.flocks[strengthOffset] = snapshot.flockIds[first];
+        runtime.flocks[strengthOffset + 1] = snapshot.flockIds[second];
         connectionCount += 1;
       }
     }
@@ -145,6 +160,7 @@ export function ConnectionField({
     runtime.geometry.setDrawRange(0, connectionCount * 2);
     runtime.positionAttribute.needsUpdate = true;
     runtime.strengthAttribute.needsUpdate = true;
+    runtime.flockAttribute.needsUpdate = true;
   });
 
   return (

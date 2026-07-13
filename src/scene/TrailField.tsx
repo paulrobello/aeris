@@ -53,6 +53,7 @@ export function TrailField({
     const positions = new Float32Array(vertexCount * 3);
     const life = new Float32Array(vertexCount);
     const speed = new Float32Array(vertexCount);
+    const flocks = new Float32Array(vertexCount);
     const indices = new Uint32Array(count * INDICES_PER_BOID);
 
     for (let boid = 0; boid < count; boid += 1) {
@@ -80,13 +81,16 @@ export function TrailField({
 
     const positionAttribute = new BufferAttribute(positions, 3);
     const speedAttribute = new BufferAttribute(speed, 1);
+    const flockAttribute = new BufferAttribute(flocks, 1);
     positionAttribute.setUsage(DynamicDrawUsage);
     speedAttribute.setUsage(DynamicDrawUsage);
+    flockAttribute.setUsage(DynamicDrawUsage);
 
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", positionAttribute);
     geometry.setAttribute("aLife", new BufferAttribute(life, 1));
     geometry.setAttribute("aSpeed", speedAttribute);
+    geometry.setAttribute("aFlock", flockAttribute);
     geometry.setIndex(new BufferAttribute(indices, 1));
 
     const history = new Float32Array(count * HISTORY_POINTS * 3);
@@ -101,8 +105,10 @@ export function TrailField({
       sides,
       positions,
       speed,
+      flocks,
       positionAttribute,
       speedAttribute,
+      flockAttribute,
     };
   }, [count]);
   const buffersRef = useRef(buffers);
@@ -211,6 +217,7 @@ export function TrailField({
         Math.hypot(vx, vy, vz) / Math.max(maxSpeed, 0.001),
         1.25,
       );
+      const flockId = snapshot.flockIds[boid];
       const vertexBase = boid * VERTICES_PER_BOID;
 
       for (let point = 0; point < RIBBON_POINTS; point += 1) {
@@ -253,6 +260,8 @@ export function TrailField({
         runtime.positions[positionOffset + 5] = work.point.z + work.side.z;
         runtime.speed[vertexBase + point * 2] = speedRatio;
         runtime.speed[vertexBase + point * 2 + 1] = speedRatio;
+        runtime.flocks[vertexBase + point * 2] = flockId;
+        runtime.flocks[vertexBase + point * 2 + 1] = flockId;
       }
     }
 
@@ -262,6 +271,7 @@ export function TrailField({
     );
     runtime.positionAttribute.needsUpdate = true;
     runtime.speedAttribute.needsUpdate = true;
+    runtime.flockAttribute.needsUpdate = true;
   }, -1);
 
   return (

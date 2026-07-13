@@ -46,11 +46,16 @@ interface SliderProps {
 const CONTROL_HELP: Record<string, string> = {
   "Boid count":
     "Number of simulated agents. Higher values increase density and GPU/CPU load.",
+  "Flock count":
+    "Number of distinct, evenly balanced flocks. Each flock is rendered with its own color.",
   "Perception radius":
     "Distance within which each boid can sense and react to neighbors.",
   "World radius":
     "Radius of the invisible containment sphere around the flock.",
-  Separation: "Strength of collision avoidance between nearby boids.",
+  Separation:
+    "Strength of collision avoidance between nearby boids within the same flock.",
+  "Flock avoidance":
+    "Cross-flock repulsion strength that keeps separate flocks from mixing.",
   Alignment:
     "Strength with which boids match the direction of nearby neighbors.",
   Cohesion: "Strength pulling each boid toward the local flock center.",
@@ -395,6 +400,7 @@ export function ControlPanel() {
             {simulationSlider("count", "Boid count", 120, 2400, 20, (value) =>
               value.toLocaleString(),
             )}
+            {simulationSlider("flockCount", "Flock count", 1, 8, 1)}
             {simulationSlider(
               "perceptionRadius",
               "Perception radius",
@@ -417,6 +423,7 @@ export function ControlPanel() {
               <span>Emergent forces</span>
             </div>
             {simulationSlider("separation", "Separation", 0, 3, 0.01)}
+            {simulationSlider("flockAvoidance", "Flock avoidance", 0, 3, 0.01)}
             {simulationSlider("alignment", "Alignment", 0, 3, 0.01)}
             {simulationSlider("cohesion", "Cohesion", 0, 3, 0.01)}
             {simulationSlider(
