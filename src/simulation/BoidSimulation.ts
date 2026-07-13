@@ -9,6 +9,7 @@ import { SpatialHash } from "./SpatialHash";
 const DEFAULT_SEED = 0xa3e15;
 const MAX_DELTA_SECONDS = 1 / 20;
 const MAX_BOIDS = 20_000;
+const MAX_FLOCKS = 8;
 const EPSILON = 1e-8;
 
 type Interaction = {
@@ -27,6 +28,12 @@ function clamp(value: number, minimum: number, maximum: number): number {
 function sanitizeConfig(config: SimulationConfig): SimulationConfig {
   return {
     count: clamp(Math.trunc(finiteOr(config.count, 0)), 0, MAX_BOIDS),
+    flockCount: clamp(
+      Math.trunc(finiteOr(config.flockCount, 1)),
+      1,
+      MAX_FLOCKS,
+    ),
+    flockAvoidance: clamp(finiteOr(config.flockAvoidance, 0), 0, 3),
     separation: clamp(finiteOr(config.separation, 0), 0, 10),
     alignment: clamp(finiteOr(config.alignment, 0), 0, 10),
     cohesion: clamp(finiteOr(config.cohesion, 0), 0, 10),
@@ -62,6 +69,7 @@ export class BoidSimulation {
   private positions = new Float32Array();
   private velocities = new Float32Array();
   private accelerations = new Float32Array();
+  private flockIds = new Uint16Array();
   private readonly spatialHash: SpatialHash;
   private readonly neighborCandidates: number[] = [];
   private readonly steeringScratch = new Float64Array(3);
@@ -74,6 +82,7 @@ export class BoidSimulation {
     this.snapshot = {
       positions: this.positions,
       velocities: this.velocities,
+      flockIds: this.flockIds,
       count: 0,
       averageSpeed: 0,
       coherence: 0,
@@ -84,11 +93,14 @@ export class BoidSimulation {
   configure(config: SimulationConfig): void {
     const nextConfig = sanitizeConfig(config);
     const previousCount = this.config.count;
+    const previousFlockCount = this.config.flockCount;
     this.config = nextConfig;
     this.spatialHash.setCellSize(nextConfig.perceptionRadius);
 
     if (nextConfig.count !== previousCount) {
       this.resize(nextConfig.count);
+    } else if (nextConfig.flockCount !== previousFlockCount) {
+      this.assignFlocks();
     }
 
     this.constrainCurrentState();
@@ -108,12 +120,14 @@ export class BoidSimulation {
       this.positions = new Float32Array(requiredLength);
       this.velocities = new Float32Array(requiredLength);
       this.accelerations = new Float32Array(requiredLength);
+      this.flockIds = new Uint16Array(this.config.count);
       this.syncSnapshotArrays();
     }
 
     this.elapsedSeconds = 0;
     this.spatialHash.setCellSize(this.config.perceptionRadius);
     this.initializeRange(0, this.config.count, new SeededRandom(this.seed));
+    this.assignFlocks();
     this.accelerations.fill(0);
     this.updateMetrics();
   }
@@ -143,6 +157,7 @@ export class BoidSimulation {
     this.positions = new Float32Array(count * 3);
     this.velocities = new Float32Array(count * 3);
     this.accelerations = new Float32Array(count * 3);
+    this.flockIds = new Uint16Array(count);
     this.positions.set(oldPositions.subarray(0, oldCount * 3));
     this.velocities.set(oldVelocities.subarray(0, oldCount * 3));
 
@@ -153,7 +168,14 @@ export class BoidSimulation {
       this.initializeRange(oldCount, count, new SeededRandom(growthSeed));
     }
 
+    this.assignFlocks();
     this.syncSnapshotArrays();
+  }
+
+  private assignFlocks(): void {
+    for (let index = 0; index < this.config.count; index += 1) {
+      this.flockIds[index] = index % this.config.flockCount;
+    }
   }
 
   private initializeRange(
@@ -208,7 +230,9 @@ export class BoidSimulation {
       const vx = this.velocities[offset];
       const vy = this.velocities[offset + 1];
       const vz = this.velocities[offset + 2];
-      let neighborCount = 0;
+      const flockId = this.flockIds[index];
+      let sameFlockNeighborCount = 0;
+      let otherFlockNeighborCount = 0;
       let separationX = 0;
       let separationY = 0;
       let separationZ = 0;
@@ -218,6 +242,9 @@ export class BoidSimulation {
       let centerX = 0;
       let centerY = 0;
       let centerZ = 0;
+      let flockAvoidanceX = 0;
+      let flockAvoidanceY = 0;
+      let flockAvoidanceZ = 0;
 
       const candidates = this.spatialHash.query(
         px,
@@ -243,6 +270,14 @@ export class BoidSimulation {
           continue;
 
         const inverseDistanceSquared = 1 / distanceSquared;
+        if (this.flockIds[neighborIndex] !== flockId) {
+          flockAvoidanceX += dx * inverseDistanceSquared;
+          flockAvoidanceY += dy * inverseDistanceSquared;
+          flockAvoidanceZ += dz * inverseDistanceSquared;
+          otherFlockNeighborCount += 1;
+          continue;
+        }
+
         separationX += dx * inverseDistanceSquared;
         separationY += dy * inverseDistanceSquared;
         separationZ += dz * inverseDistanceSquared;
@@ -252,18 +287,18 @@ export class BoidSimulation {
         centerX += this.positions[neighborOffset];
         centerY += this.positions[neighborOffset + 1];
         centerZ += this.positions[neighborOffset + 2];
-        neighborCount += 1;
+        sameFlockNeighborCount += 1;
       }
 
       let accelerationX = 0;
       let accelerationY = 0;
       let accelerationZ = 0;
 
-      if (neighborCount > 0 && maxForce > 0) {
+      if (sameFlockNeighborCount > 0 && maxForce > 0) {
         this.steer(
-          separationX / neighborCount,
-          separationY / neighborCount,
-          separationZ / neighborCount,
+          separationX / sameFlockNeighborCount,
+          separationY / sameFlockNeighborCount,
+          separationZ / sameFlockNeighborCount,
           vx,
           vy,
           vz,
@@ -273,9 +308,9 @@ export class BoidSimulation {
         accelerationZ += this.steeringScratch[2] * this.config.separation;
 
         this.steer(
-          alignmentX / neighborCount,
-          alignmentY / neighborCount,
-          alignmentZ / neighborCount,
+          alignmentX / sameFlockNeighborCount,
+          alignmentY / sameFlockNeighborCount,
+          alignmentZ / sameFlockNeighborCount,
           vx,
           vy,
           vz,
@@ -285,9 +320,9 @@ export class BoidSimulation {
         accelerationZ += this.steeringScratch[2] * this.config.alignment;
 
         this.steer(
-          centerX / neighborCount - px,
-          centerY / neighborCount - py,
-          centerZ / neighborCount - pz,
+          centerX / sameFlockNeighborCount - px,
+          centerY / sameFlockNeighborCount - py,
+          centerZ / sameFlockNeighborCount - pz,
           vx,
           vy,
           vz,
@@ -295,6 +330,24 @@ export class BoidSimulation {
         accelerationX += this.steeringScratch[0] * this.config.cohesion;
         accelerationY += this.steeringScratch[1] * this.config.cohesion;
         accelerationZ += this.steeringScratch[2] * this.config.cohesion;
+      }
+
+      if (
+        otherFlockNeighborCount > 0 &&
+        this.config.flockAvoidance > 0 &&
+        maxForce > 0
+      ) {
+        this.steer(
+          flockAvoidanceX / otherFlockNeighborCount,
+          flockAvoidanceY / otherFlockNeighborCount,
+          flockAvoidanceZ / otherFlockNeighborCount,
+          vx,
+          vy,
+          vz,
+        );
+        accelerationX += this.steeringScratch[0] * this.config.flockAvoidance;
+        accelerationY += this.steeringScratch[1] * this.config.flockAvoidance;
+        accelerationZ += this.steeringScratch[2] * this.config.flockAvoidance;
       }
 
       const distanceFromCenter = Math.sqrt(px * px + py * py + pz * pz);
@@ -542,5 +595,6 @@ export class BoidSimulation {
   private syncSnapshotArrays(): void {
     this.snapshot.positions = this.positions;
     this.snapshot.velocities = this.velocities;
+    this.snapshot.flockIds = this.flockIds;
   }
 }

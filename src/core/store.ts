@@ -99,8 +99,18 @@ export function parseSimulatorConfiguration(
   const visual = value.visual;
   if (!isRecord(simulation) || !isRecord(visual)) return null;
 
+  const flockCount =
+    simulation.flockCount === undefined
+      ? DEFAULT_PRESET.simulation.flockCount
+      : finiteNumber(simulation.flockCount, 1, 8);
+  const flockAvoidance =
+    simulation.flockAvoidance === undefined
+      ? DEFAULT_PRESET.simulation.flockAvoidance
+      : finiteNumber(simulation.flockAvoidance, 0, 3);
   const numbers = {
     count: finiteNumber(simulation.count, 120, 2400),
+    flockCount,
+    flockAvoidance,
     separation: finiteNumber(simulation.separation, 0, 3),
     alignment: finiteNumber(simulation.alignment, 0, 3),
     cohesion: finiteNumber(simulation.cohesion, 0, 3),
@@ -141,6 +151,8 @@ export function parseSimulatorConfiguration(
     version: 1,
     simulation: {
       count: Math.round(numbers.count!),
+      flockCount: Math.round(numbers.flockCount!),
+      flockAvoidance: numbers.flockAvoidance!,
       separation: numbers.separation!,
       alignment: numbers.alignment!,
       cohesion: numbers.cohesion!,
@@ -211,7 +223,9 @@ export const useSimulatorStore = create<SimulatorState>((set) => ({
       simulation: { ...state.simulation, ...patch },
       activePreset: state.activePreset,
       resetToken:
-        patch.count === undefined ? state.resetToken : state.resetToken + 1,
+        patch.count === undefined && patch.flockCount === undefined
+          ? state.resetToken
+          : state.resetToken + 1,
     })),
   setVisual: (patch) =>
     set((state) => ({ visual: { ...state.visual, ...patch } })),

@@ -5,6 +5,8 @@ import { SpatialHash } from "./SpatialHash";
 
 const BASE_CONFIG: SimulationConfig = {
   count: 96,
+  flockCount: 1,
+  flockAvoidance: 1,
   separation: 1.2,
   alignment: 1,
   cohesion: 0.8,
@@ -41,6 +43,34 @@ function meanRadialVelocity(simulation: BoidSimulation): number {
   return total / count;
 }
 
+function meanCrossFlockSeparationRate(simulation: BoidSimulation): number {
+  const { positions, velocities, flockIds, count } = simulation.getSnapshot();
+  let pairCount = 0;
+  let total = 0;
+
+  for (let first = 0; first < count; first += 1) {
+    const firstOffset = first * 3;
+    for (let second = first + 1; second < count; second += 1) {
+      if (flockIds[first] === flockIds[second]) continue;
+      const secondOffset = second * 3;
+      const dx = positions[firstOffset] - positions[secondOffset];
+      const dy = positions[firstOffset + 1] - positions[secondOffset + 1];
+      const dz = positions[firstOffset + 2] - positions[secondOffset + 2];
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (distance === 0) continue;
+
+      total +=
+        ((velocities[firstOffset] - velocities[secondOffset]) * dx +
+          (velocities[firstOffset + 1] - velocities[secondOffset + 1]) * dy +
+          (velocities[firstOffset + 2] - velocities[secondOffset + 2]) * dz) /
+        distance;
+      pairCount += 1;
+    }
+  }
+
+  return pairCount > 0 ? total / pairCount : 0;
+}
+
 describe("BoidSimulation", () => {
   it("keeps distinct cells separate when their numeric hashes collide", () => {
     const hash = new SpatialHash(1);
@@ -73,12 +103,20 @@ describe("BoidSimulation", () => {
     expect(first.getSnapshot().velocities).toEqual(
       second.getSnapshot().velocities,
     );
+    expect(first.getSnapshot().flockIds).toEqual(second.getSnapshot().flockIds);
     expect(first.getSnapshot().coherence).toBe(second.getSnapshot().coherence);
   });
 
   it("keeps every value finite, speed limited, and position inside the sphere", () => {
     const simulation = new BoidSimulation(
-      { ...BASE_CONFIG, boundaryRadius: 4, maxSpeed: 12, turbulence: 4 },
+      {
+        ...BASE_CONFIG,
+        flockCount: 8,
+        flockAvoidance: 3,
+        boundaryRadius: 4,
+        maxSpeed: 12,
+        turbulence: 4,
+      },
       17,
     );
 
@@ -138,6 +176,114 @@ describe("BoidSimulation", () => {
 
     expect(flocking.getSnapshot().coherence).toBeGreaterThan(
       loose.getSnapshot().coherence + 0.15,
+    );
+  });
+
+  it("assigns balanced flock IDs and reuses same-sized ID arrays", () => {
+    const simulation = new BoidSimulation(
+      { ...BASE_CONFIG, count: 10, flockCount: 3 },
+      57,
+    );
+    const initialFlockIds = simulation.getSnapshot().flockIds;
+
+    expect(initialFlockIds).toBeInstanceOf(Uint16Array);
+    expect(Array.from(initialFlockIds)).toEqual([0, 1, 2, 0, 1, 2, 0, 1, 2, 0]);
+
+    simulation.reset(undefined, 57);
+    expect(simulation.getSnapshot().flockIds).toBe(initialFlockIds);
+    expect(Array.from(simulation.getSnapshot().flockIds)).toEqual([
+      0, 1, 2, 0, 1, 2, 0, 1, 2, 0,
+    ]);
+
+    simulation.configure({ ...BASE_CONFIG, count: 10, flockCount: 4 });
+    expect(simulation.getSnapshot().flockIds).toBe(initialFlockIds);
+    expect(Array.from(simulation.getSnapshot().flockIds)).toEqual([
+      0, 1, 2, 3, 0, 1, 2, 3, 0, 1,
+    ]);
+
+    simulation.configure({ ...BASE_CONFIG, count: 12, flockCount: 4 });
+    expect(simulation.getSnapshot().flockIds).not.toBe(initialFlockIds);
+    expect(Array.from(simulation.getSnapshot().flockIds)).toEqual([
+      0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3,
+    ]);
+  });
+
+  it("does not align or cohere with members of another flock", () => {
+    const isolatedConfig: SimulationConfig = {
+      ...BASE_CONFIG,
+      count: 2,
+      flockCount: 2,
+      flockAvoidance: 0,
+      separation: 0,
+      turbulence: 0,
+      pointerForce: 0,
+      perceptionRadius: 100,
+      boundaryRadius: 40,
+    };
+    const loose = new BoidSimulation(
+      { ...isolatedConfig, alignment: 0, cohesion: 0 },
+      412,
+    );
+    const flocking = new BoidSimulation(
+      { ...isolatedConfig, alignment: 3, cohesion: 3 },
+      412,
+    );
+
+    runSteps(loose, 120);
+    runSteps(flocking, 120);
+
+    expect(flocking.getSnapshot().positions).toEqual(
+      loose.getSnapshot().positions,
+    );
+    expect(flocking.getSnapshot().velocities).toEqual(
+      loose.getSnapshot().velocities,
+    );
+  });
+
+  it("does not apply flock avoidance to a single flock", () => {
+    const config: SimulationConfig = {
+      ...BASE_CONFIG,
+      count: 24,
+      flockCount: 1,
+      turbulence: 0,
+      perceptionRadius: 40,
+    };
+    const disabled = new BoidSimulation({ ...config, flockAvoidance: 0 }, 19);
+    const enabled = new BoidSimulation({ ...config, flockAvoidance: 3 }, 19);
+
+    runSteps(disabled, 120);
+    runSteps(enabled, 120);
+
+    expect(enabled.getSnapshot().positions).toEqual(
+      disabled.getSnapshot().positions,
+    );
+    expect(enabled.getSnapshot().velocities).toEqual(
+      disabled.getSnapshot().velocities,
+    );
+  });
+
+  it("repels nearby members of another flock", () => {
+    const config: SimulationConfig = {
+      ...BASE_CONFIG,
+      count: 2,
+      flockCount: 2,
+      separation: 0,
+      alignment: 0,
+      cohesion: 0,
+      turbulence: 0,
+      pointerForce: 0,
+      perceptionRadius: 100,
+      boundaryRadius: 40,
+      maxForce: 2,
+    };
+    const disabled = new BoidSimulation({ ...config, flockAvoidance: 0 }, 711);
+    const repelling = new BoidSimulation({ ...config, flockAvoidance: 3 }, 711);
+
+    disabled.step(1 / 20);
+    repelling.step(1 / 20);
+
+    expect(meanCrossFlockSeparationRate(repelling)).toBeGreaterThan(
+      meanCrossFlockSeparationRate(disabled) + 0.05,
     );
   });
 

@@ -11,6 +11,8 @@ export type QualityMode = "performance" | "balanced" | "cinematic";
 
 export interface SimulationConfig {
   count: number;
+  flockCount: number;
+  flockAvoidance: number;
   separation: number;
   alignment: number;
   cohesion: number;
@@ -60,6 +62,7 @@ export type PresetId =
 export interface BoidSnapshot {
   positions: Float32Array;
   velocities: Float32Array;
+  flockIds: Uint16Array;
   count: number;
   averageSpeed: number;
   coherence: number;

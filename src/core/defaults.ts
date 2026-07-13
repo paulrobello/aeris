@@ -11,6 +11,8 @@ export const PRESETS: Record<
     description: "Tight, living ribbons inspired by starling flocks at dusk.",
     simulation: {
       count: 620,
+      flockCount: 1,
+      flockAvoidance: 1,
       separation: 1.35,
       alignment: 0.92,
       cohesion: 0.76,
@@ -44,6 +46,8 @@ export const PRESETS: Record<
     description: "A violent orbital swarm collapsing around a dark attractor.",
     simulation: {
       count: 900,
+      flockCount: 1,
+      flockAvoidance: 1,
       separation: 0.82,
       alignment: 0.44,
       cohesion: 1.42,
@@ -77,6 +81,8 @@ export const PRESETS: Record<
     description: "Wide, high-speed streams carving through a stellar storm.",
     simulation: {
       count: 480,
+      flockCount: 1,
+      flockAvoidance: 1,
       separation: 1.72,
       alignment: 1.28,
       cohesion: 0.35,
@@ -111,6 +117,8 @@ export const PRESETS: Record<
       "A calm, crystalline formation suspended over an infinite grid.",
     simulation: {
       count: 360,
+      flockCount: 1,
+      flockAvoidance: 1,
       separation: 2.1,
       alignment: 1.55,
       cohesion: 0.58,

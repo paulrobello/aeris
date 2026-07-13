@@ -33,6 +33,74 @@ describe("simulator configuration", () => {
     ).toBe(2400);
   });
 
+  it("migrates legacy configurations with default flock settings", () => {
+    const configuration = JSON.parse(
+      JSON.stringify(
+        createSimulatorConfiguration(useSimulatorStore.getState()),
+      ),
+    ) as { simulation: Record<string, unknown> };
+    delete configuration.simulation.flockCount;
+    delete configuration.simulation.flockAvoidance;
+
+    expect(
+      parseSimulatorConfiguration(configuration)?.simulation,
+    ).toMatchObject({
+      flockCount: 1,
+      flockAvoidance: 1,
+    });
+  });
+
+  it("clamps flock settings and rejects malformed explicit values", () => {
+    const configuration = createSimulatorConfiguration(
+      useSimulatorStore.getState(),
+    );
+
+    expect(
+      parseSimulatorConfiguration({
+        ...configuration,
+        simulation: {
+          ...configuration.simulation,
+          flockCount: 99,
+          flockAvoidance: -1,
+        },
+      })?.simulation,
+    ).toMatchObject({ flockCount: 8, flockAvoidance: 0 });
+    expect(
+      parseSimulatorConfiguration({
+        ...configuration,
+        simulation: {
+          ...configuration.simulation,
+          flockCount: null,
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseSimulatorConfiguration({
+        ...configuration,
+        simulation: {
+          ...configuration.simulation,
+          flockAvoidance: "high",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("reseeds for population or flock-count changes only", () => {
+    const original = createSimulatorConfiguration(useSimulatorStore.getState());
+    const initialResetToken = useSimulatorStore.getState().resetToken;
+
+    useSimulatorStore.getState().setSimulation({ separation: 2 });
+    expect(useSimulatorStore.getState().resetToken).toBe(initialResetToken);
+
+    useSimulatorStore.getState().setSimulation({ flockCount: 2 });
+    expect(useSimulatorStore.getState().resetToken).toBe(initialResetToken + 1);
+
+    useSimulatorStore.getState().setSimulation({ count: 800 });
+    expect(useSimulatorStore.getState().resetToken).toBe(initialResetToken + 2);
+
+    useSimulatorStore.getState().applyConfiguration(original);
+  });
+
   it("applies imported settings and reseeds the simulation", () => {
     const store = useSimulatorStore.getState();
     const original = createSimulatorConfiguration(store);
