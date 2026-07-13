@@ -27,6 +27,7 @@ import { BoidSwarm } from "./BoidSwarm";
 import { CameraRig } from "./CameraRig";
 import { ConnectionField } from "./ConnectionField";
 import { Environments } from "./Environments";
+import { Predator } from "./Predator";
 import { SceneEffects } from "./SceneEffects";
 import { TrailField } from "./TrailField";
 
@@ -51,6 +52,15 @@ interface PublicSceneState {
   leadBoid: {
     position: [number, number, number];
     velocity: [number, number, number];
+  } | null;
+  predator: {
+    position: [number, number, number];
+    velocity: [number, number, number];
+    targetIndex: number;
+    targetPosition: [number, number, number] | null;
+    pursuitSecondsRemaining: number;
+    catchCount: number;
+    boostingBoidCount: number;
   } | null;
 }
 
@@ -140,6 +150,10 @@ function SimulationScene() {
     if (typeof window === "undefined") return;
     const snapshot = snapshotRef.current;
     const hasLead = snapshot.count > 0;
+    const predator = snapshot.predator;
+    const hasPredatorTarget =
+      predator.targetIndex >= 0 && predator.targetIndex < snapshot.count;
+    const targetOffset = predator.targetIndex * 3;
     (window as AerisWindow).__aerisSceneState = {
       version: 1,
       coordinateSystem:
@@ -164,6 +178,31 @@ function SimulationScene() {
               snapshot.velocities[1],
               snapshot.velocities[2],
             ],
+          }
+        : null,
+      predator: predator.active
+        ? {
+            position: [
+              predator.position[0],
+              predator.position[1],
+              predator.position[2],
+            ],
+            velocity: [
+              predator.velocity[0],
+              predator.velocity[1],
+              predator.velocity[2],
+            ],
+            targetIndex: predator.targetIndex,
+            targetPosition: hasPredatorTarget
+              ? [
+                  snapshot.positions[targetOffset],
+                  snapshot.positions[targetOffset + 1],
+                  snapshot.positions[targetOffset + 2],
+                ]
+              : null,
+            pursuitSecondsRemaining: predator.targetSecondsRemaining,
+            catchCount: predator.catchCount,
+            boostingBoidCount: snapshot.boostingBoidCount,
           }
         : null,
     };
@@ -306,6 +345,7 @@ function SimulationScene() {
           resetToken={resetToken}
         />
       )}
+      <Predator snapshotRef={snapshotRef} resetToken={resetToken} />
       {visual.showConnections && (
         <ConnectionField
           snapshotRef={snapshotRef}

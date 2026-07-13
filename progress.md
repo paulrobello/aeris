@@ -43,4 +43,6 @@ Original prompt: create me a threejs web app boid simulator, it should be highly
 
 ## TODO
 
-- None for the multi-flock enhancement.
+- Predator enhancement completed 2026-07-12: added an optional persisted Predator switch, deterministic 10–30 second target cycles, immediate catch/timeout retargeting, swept catch detection, boid avoidance, and temporary escape-speed boosting without removing or harming caught boids.
+- Added a distinct forward-aligned red-orange hunter with a bright core, energy ring, and fading afterimages, plus text diagnostics for its target, countdown, catches, and boosting boids.
+- `make checkall` passes with 28 unit tests and two SSR tests. Chrome QA verified enable/disable, reload persistence, timeout retargeting, two live catches with all 620 boids preserved, active escape boosts, and no new console errors. The required Playwright game loop also enabled the switch and completed two capture iterations without error artifacts.
