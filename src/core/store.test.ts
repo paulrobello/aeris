@@ -33,7 +33,7 @@ describe("simulator configuration", () => {
     ).toBe(2400);
   });
 
-  it("migrates legacy configurations with default flock settings", () => {
+  it("migrates legacy configurations with default flock and predator settings", () => {
     const configuration = JSON.parse(
       JSON.stringify(
         createSimulatorConfiguration(useSimulatorStore.getState()),
@@ -41,13 +41,43 @@ describe("simulator configuration", () => {
     ) as { simulation: Record<string, unknown> };
     delete configuration.simulation.flockCount;
     delete configuration.simulation.flockAvoidance;
+    delete configuration.simulation.predatorEnabled;
 
     expect(
       parseSimulatorConfiguration(configuration)?.simulation,
     ).toMatchObject({
       flockCount: 1,
       flockAvoidance: 1,
+      predatorEnabled: false,
     });
+  });
+
+  it("round-trips an enabled predator", () => {
+    const configuration = createSimulatorConfiguration(
+      useSimulatorStore.getState(),
+    );
+    const enabled = {
+      ...configuration,
+      simulation: { ...configuration.simulation, predatorEnabled: true },
+    };
+
+    expect(parseSimulatorConfiguration(enabled)).toEqual(enabled);
+  });
+
+  it("rejects malformed explicit predator settings", () => {
+    const configuration = createSimulatorConfiguration(
+      useSimulatorStore.getState(),
+    );
+
+    expect(
+      parseSimulatorConfiguration({
+        ...configuration,
+        simulation: {
+          ...configuration.simulation,
+          predatorEnabled: "yes",
+        },
+      }),
+    ).toBeNull();
   });
 
   it("clamps flock settings and rejects malformed explicit values", () => {
@@ -85,7 +115,7 @@ describe("simulator configuration", () => {
     ).toBeNull();
   });
 
-  it("reseeds for population or flock-count changes only", () => {
+  it("reseeds for population, flock-count, or predator changes only", () => {
     const original = createSimulatorConfiguration(useSimulatorStore.getState());
     const initialResetToken = useSimulatorStore.getState().resetToken;
 
@@ -97,6 +127,9 @@ describe("simulator configuration", () => {
 
     useSimulatorStore.getState().setSimulation({ count: 800 });
     expect(useSimulatorStore.getState().resetToken).toBe(initialResetToken + 2);
+
+    useSimulatorStore.getState().setSimulation({ predatorEnabled: true });
+    expect(useSimulatorStore.getState().resetToken).toBe(initialResetToken + 3);
 
     useSimulatorStore.getState().applyConfiguration(original);
   });
@@ -127,7 +160,12 @@ describe("simulator configuration", () => {
     const originalUserProgram = store.userProgram;
     store.applyConfiguration({
       ...original,
-      simulation: { ...original.simulation, count: 1740, cohesion: 1.23 },
+      simulation: {
+        ...original.simulation,
+        count: 1740,
+        cohesion: 1.23,
+        predatorEnabled: true,
+      },
       visual: { ...original.visual, trailWidth: 0.21 },
       cameraMode: "follow",
       environment: "aurora",
@@ -138,7 +176,11 @@ describe("simulator configuration", () => {
       activePreset: "user",
       userProgram: {
         activePreset: "user",
-        simulation: expect.objectContaining({ count: 1740, cohesion: 1.23 }),
+        simulation: expect.objectContaining({
+          count: 1740,
+          cohesion: 1.23,
+          predatorEnabled: true,
+        }),
         visual: expect.objectContaining({ trailWidth: 0.21 }),
         cameraMode: "follow",
         environment: "aurora",
@@ -149,7 +191,11 @@ describe("simulator configuration", () => {
     useSimulatorStore.getState().applyPreset("user");
     expect(useSimulatorStore.getState()).toMatchObject({
       activePreset: "user",
-      simulation: expect.objectContaining({ count: 1740, cohesion: 1.23 }),
+      simulation: expect.objectContaining({
+        count: 1740,
+        cohesion: 1.23,
+        predatorEnabled: true,
+      }),
       visual: expect.objectContaining({ trailWidth: 0.21 }),
       cameraMode: "follow",
       environment: "aurora",

@@ -13,6 +13,7 @@ export interface SimulationConfig {
   count: number;
   flockCount: number;
   flockAvoidance: number;
+  predatorEnabled: boolean;
   separation: number;
   alignment: number;
   cohesion: number;
@@ -22,6 +23,15 @@ export interface SimulationConfig {
   boundaryRadius: number;
   turbulence: number;
   pointerForce: number;
+}
+
+export interface PredatorSnapshot {
+  active: boolean;
+  position: Float32Array;
+  velocity: Float32Array;
+  targetIndex: number;
+  targetSecondsRemaining: number;
+  catchCount: number;
 }
 
 export interface VisualConfig {
@@ -63,7 +73,10 @@ export interface BoidSnapshot {
   positions: Float32Array;
   velocities: Float32Array;
   flockIds: Uint16Array;
+  boostingBoids: Uint8Array;
+  predator: PredatorSnapshot;
   count: number;
+  boostingBoidCount: number;
   averageSpeed: number;
   coherence: number;
 }

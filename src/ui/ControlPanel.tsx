@@ -32,6 +32,11 @@ import type {
 } from "@/src/core/types";
 
 type TabId = "flock" | "visual" | "world";
+type SimulationNumericKey = {
+  [Key in keyof SimulationConfig]: SimulationConfig[Key] extends number
+    ? Key
+    : never;
+}[keyof SimulationConfig];
 
 interface SliderProps {
   label: string;
@@ -276,7 +281,7 @@ export function ControlPanel() {
   };
 
   const simulationSlider = (
-    key: keyof SimulationConfig,
+    key: SimulationNumericKey,
     label: string,
     min: number,
     max: number,
@@ -401,6 +406,12 @@ export function ControlPanel() {
               value.toLocaleString(),
             )}
             {simulationSlider("flockCount", "Flock count", 1, 8, 1)}
+            <Toggle
+              label="Predator"
+              description="Hunts one boid at a time; nearby boids boost to escape"
+              checked={simulation.predatorEnabled}
+              onChange={(predatorEnabled) => setSimulation({ predatorEnabled })}
+            />
             {simulationSlider(
               "perceptionRadius",
               "Perception radius",

@@ -7,6 +7,7 @@ const BASE_CONFIG: SimulationConfig = {
   count: 96,
   flockCount: 1,
   flockAvoidance: 1,
+  predatorEnabled: false,
   separation: 1.2,
   alignment: 1,
   cohesion: 0.8,
@@ -22,6 +23,32 @@ function runSteps(simulation: BoidSimulation, count: number): void {
   for (let index = 0; index < count; index += 1) {
     simulation.step(1 / 60);
   }
+}
+
+function distanceToTarget(simulation: BoidSimulation): number {
+  const { positions, predator } = simulation.getSnapshot();
+  const offset = predator.targetIndex * 3;
+  const dx = predator.position[0] - positions[offset];
+  const dy = predator.position[1] - positions[offset + 1];
+  const dz = predator.position[2] - positions[offset + 2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function maximumBoidSpeed(simulation: BoidSimulation): number {
+  const { velocities, count } = simulation.getSnapshot();
+  let maximum = 0;
+  for (let index = 0; index < count; index += 1) {
+    const offset = index * 3;
+    maximum = Math.max(
+      maximum,
+      Math.sqrt(
+        velocities[offset] * velocities[offset] +
+          velocities[offset + 1] * velocities[offset + 1] +
+          velocities[offset + 2] * velocities[offset + 2],
+      ),
+    );
+  }
+  return maximum;
 }
 
 function meanRadialVelocity(simulation: BoidSimulation): number {
@@ -105,6 +132,300 @@ describe("BoidSimulation", () => {
     );
     expect(first.getSnapshot().flockIds).toEqual(second.getSnapshot().flockIds);
     expect(first.getSnapshot().coherence).toBe(second.getSnapshot().coherence);
+  });
+
+  it("keeps predator decisions and motion deterministic for a seed", () => {
+    const config = { ...BASE_CONFIG, predatorEnabled: true };
+    const first = new BoidSimulation(config, 608);
+    const second = new BoidSimulation(config, 608);
+
+    runSteps(first, 900);
+    runSteps(second, 900);
+
+    const firstSnapshot = first.getSnapshot();
+    const secondSnapshot = second.getSnapshot();
+    expect(firstSnapshot.positions).toEqual(secondSnapshot.positions);
+    expect(firstSnapshot.velocities).toEqual(secondSnapshot.velocities);
+    expect(firstSnapshot.boostingBoids).toEqual(secondSnapshot.boostingBoids);
+    expect(firstSnapshot.predator.position).toEqual(
+      secondSnapshot.predator.position,
+    );
+    expect(firstSnapshot.predator.velocity).toEqual(
+      secondSnapshot.predator.velocity,
+    );
+    expect(firstSnapshot.predator.targetIndex).toBe(
+      secondSnapshot.predator.targetIndex,
+    );
+    expect(firstSnapshot.predator.targetSecondsRemaining).toBe(
+      secondSnapshot.predator.targetSecondsRemaining,
+    );
+    expect(firstSnapshot.predator.catchCount).toBe(
+      secondSnapshot.predator.catchCount,
+    );
+  });
+
+  it("chooses 10 to 30 second pursuits and changes target on timeout", () => {
+    const simulation = new BoidSimulation(
+      {
+        ...BASE_CONFIG,
+        count: 4,
+        predatorEnabled: true,
+        maxSpeed: 0,
+        maxForce: 0,
+      },
+      91,
+    );
+    const initial = simulation.getSnapshot().predator;
+    const initialTarget = initial.targetIndex;
+    const initialDuration = initial.targetSecondsRemaining;
+
+    expect(initialDuration).toBeGreaterThanOrEqual(10);
+    expect(initialDuration).toBeLessThanOrEqual(30);
+    runSteps(simulation, Math.ceil((initialDuration + 0.1) * 60));
+
+    const retargeted = simulation.getSnapshot().predator;
+    expect(retargeted.targetIndex).not.toBe(initialTarget);
+    expect(retargeted.targetSecondsRemaining).toBeGreaterThanOrEqual(10);
+    expect(retargeted.targetSecondsRemaining).toBeLessThanOrEqual(30);
+    expect(retargeted.catchCount).toBe(0);
+  });
+
+  it("chases its selected target and closes the distance", () => {
+    const simulation = new BoidSimulation(
+      {
+        ...BASE_CONFIG,
+        count: 1,
+        predatorEnabled: true,
+        separation: 0,
+        alignment: 0,
+        cohesion: 0,
+        turbulence: 0,
+        pointerForce: 0,
+        perceptionRadius: 0.05,
+        boundaryRadius: 20,
+        maxForce: 5,
+      },
+      303,
+    );
+    const initialDistance = distanceToTarget(simulation);
+
+    runSteps(simulation, 180);
+
+    expect(distanceToTarget(simulation)).toBeLessThan(initialDistance * 0.65);
+  });
+
+  it("steers threatened boids away from the predator", () => {
+    const config: SimulationConfig = {
+      ...BASE_CONFIG,
+      count: 24,
+      separation: 0,
+      alignment: 0,
+      cohesion: 0,
+      turbulence: 0,
+      pointerForce: 0,
+      perceptionRadius: 100,
+      boundaryRadius: 40,
+      maxForce: 2,
+    };
+    const escaping = new BoidSimulation(
+      { ...config, predatorEnabled: true },
+      712,
+    );
+    const baseline = new BoidSimulation(
+      { ...config, predatorEnabled: false },
+      712,
+    );
+    const initialPositions = Array.from(escaping.getSnapshot().positions);
+    const predatorPosition = Array.from(
+      escaping.getSnapshot().predator.position,
+    );
+
+    escaping.step(1 / 20);
+    baseline.step(1 / 20);
+
+    const escapingVelocities = escaping.getSnapshot().velocities;
+    const baselineVelocities = baseline.getSnapshot().velocities;
+    let outwardVelocityDifference = 0;
+    for (let index = 0; index < config.count; index += 1) {
+      const offset = index * 3;
+      const dx = initialPositions[offset] - predatorPosition[0];
+      const dy = initialPositions[offset + 1] - predatorPosition[1];
+      const dz = initialPositions[offset + 2] - predatorPosition[2];
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      outwardVelocityDifference +=
+        ((escapingVelocities[offset] - baselineVelocities[offset]) * dx +
+          (escapingVelocities[offset + 1] - baselineVelocities[offset + 1]) *
+            dy +
+          (escapingVelocities[offset + 2] - baselineVelocities[offset + 2]) *
+            dz) /
+        distance;
+    }
+
+    expect(escaping.getSnapshot().boostingBoidCount).toBe(config.count);
+    expect(outwardVelocityDifference).toBeGreaterThan(0.5);
+  });
+
+  it("lets threatened boids boost above normal speed without exceeding the escape cap", () => {
+    const simulation = new BoidSimulation(
+      {
+        ...BASE_CONFIG,
+        count: 24,
+        predatorEnabled: true,
+        separation: 0,
+        alignment: 0,
+        cohesion: 0,
+        turbulence: 0,
+        pointerForce: 0,
+        perceptionRadius: 100,
+        boundaryRadius: 40,
+        maxSpeed: 1,
+        maxForce: 20,
+      },
+      81,
+    );
+
+    runSteps(simulation, 60);
+
+    expect(simulation.getSnapshot().boostingBoidCount).toBeGreaterThan(0);
+    expect(maximumBoidSpeed(simulation)).toBeGreaterThan(1.01);
+    expect(maximumBoidSpeed(simulation)).toBeLessThanOrEqual(1.600_01);
+  });
+
+  it("retargets immediately on catch without removing or reassigning boids", () => {
+    const simulation = new BoidSimulation(
+      {
+        ...BASE_CONFIG,
+        count: 3,
+        flockCount: 3,
+        predatorEnabled: true,
+        separation: 0,
+        alignment: 0,
+        cohesion: 0,
+        turbulence: 0,
+        pointerForce: 0,
+        perceptionRadius: 0.05,
+        boundaryRadius: 2,
+        maxSpeed: 20,
+        maxForce: 0,
+      },
+      22,
+    );
+    const initialFlockIds = Array.from(simulation.getSnapshot().flockIds);
+    let caughtTarget = -1;
+    let replacementTarget = -1;
+
+    for (let step = 0; step < 1_200; step += 1) {
+      const before = simulation.getSnapshot().predator;
+      const previousCatchCount = before.catchCount;
+      const previousTarget = before.targetIndex;
+      simulation.step(1 / 20);
+      const after = simulation.getSnapshot().predator;
+      if (after.catchCount > previousCatchCount) {
+        caughtTarget = previousTarget;
+        replacementTarget = after.targetIndex;
+        break;
+      }
+    }
+
+    expect(caughtTarget).toBeGreaterThanOrEqual(0);
+    expect(replacementTarget).not.toBe(caughtTarget);
+    expect(simulation.getSnapshot().count).toBe(3);
+    expect(Array.from(simulation.getSnapshot().flockIds)).toEqual(
+      initialFlockIds,
+    );
+  });
+
+  it("keeps the disabled predator as a bit-for-bit no-op", () => {
+    const legacyConfig = { ...BASE_CONFIG } as Partial<SimulationConfig>;
+    delete legacyConfig.predatorEnabled;
+    const explicit = new BoidSimulation(BASE_CONFIG, 55);
+    const omitted = new BoidSimulation(legacyConfig as SimulationConfig, 55);
+
+    runSteps(explicit, 240);
+    runSteps(omitted, 240);
+
+    expect(omitted.getSnapshot().positions).toEqual(
+      explicit.getSnapshot().positions,
+    );
+    expect(omitted.getSnapshot().velocities).toEqual(
+      explicit.getSnapshot().velocities,
+    );
+    expect(omitted.getSnapshot().predator.active).toBe(false);
+    expect(omitted.getSnapshot().predator.targetIndex).toBe(-1);
+    expect(omitted.getSnapshot().boostingBoidCount).toBe(0);
+  });
+
+  it("reuses predator arrays and reproduces predator state on reset", () => {
+    const simulation = new BoidSimulation(
+      { ...BASE_CONFIG, count: 12, predatorEnabled: true },
+      704,
+    );
+    const snapshot = simulation.getSnapshot();
+    const predator = snapshot.predator;
+    const predatorPosition = snapshot.predator.position;
+    const predatorVelocity = snapshot.predator.velocity;
+    const boostingBoids = snapshot.boostingBoids;
+    const initialPosition = Array.from(predatorPosition);
+    const initialVelocity = Array.from(predatorVelocity);
+    const initialTarget = snapshot.predator.targetIndex;
+    const initialDuration = snapshot.predator.targetSecondsRemaining;
+
+    runSteps(simulation, 120);
+    simulation.reset(undefined, 704);
+
+    const reset = simulation.getSnapshot();
+    expect(reset.predator).toBe(predator);
+    expect(reset.predator.position).toBe(predatorPosition);
+    expect(reset.predator.velocity).toBe(predatorVelocity);
+    expect(reset.boostingBoids).toBe(boostingBoids);
+    expect(Array.from(reset.predator.position)).toEqual(initialPosition);
+    expect(Array.from(reset.predator.velocity)).toEqual(initialVelocity);
+    expect(reset.predator.targetIndex).toBe(initialTarget);
+    expect(reset.predator.targetSecondsRemaining).toBe(initialDuration);
+    expect(reset.predator.catchCount).toBe(0);
+  });
+
+  it("keeps enabled predator state finite, bounded, and safe with zero or one boid", () => {
+    const empty = new BoidSimulation(
+      { ...BASE_CONFIG, count: 0, predatorEnabled: true },
+      11,
+    );
+    expect(empty.getSnapshot().predator.active).toBe(false);
+    expect(empty.getSnapshot().predator.targetIndex).toBe(-1);
+    expect(empty.getSnapshot().boostingBoids).toHaveLength(0);
+
+    const single = new BoidSimulation(
+      {
+        ...BASE_CONFIG,
+        count: 1,
+        predatorEnabled: true,
+        boundaryRadius: 4,
+        maxSpeed: 12,
+        maxForce: 8,
+      },
+      17,
+    );
+    runSteps(single, 1_200);
+    const snapshot = single.getSnapshot();
+    const predatorSpeed = Math.sqrt(
+      snapshot.predator.velocity[0] * snapshot.predator.velocity[0] +
+        snapshot.predator.velocity[1] * snapshot.predator.velocity[1] +
+        snapshot.predator.velocity[2] * snapshot.predator.velocity[2],
+    );
+    const predatorDistance = Math.sqrt(
+      snapshot.predator.position[0] * snapshot.predator.position[0] +
+        snapshot.predator.position[1] * snapshot.predator.position[1] +
+        snapshot.predator.position[2] * snapshot.predator.position[2],
+    );
+    expect(snapshot.predator.targetIndex).toBe(0);
+    expect(
+      [...snapshot.predator.position, ...snapshot.predator.velocity].every(
+        Number.isFinite,
+      ),
+    ).toBe(true);
+    expect(predatorSpeed).toBeLessThanOrEqual(12 * 1.35 + 0.000_01);
+    expect(predatorDistance).toBeLessThanOrEqual(4);
+    expect(maximumBoidSpeed(single)).toBeLessThanOrEqual(12 * 1.6 + 0.000_01);
   });
 
   it("keeps every value finite, speed limited, and position inside the sphere", () => {

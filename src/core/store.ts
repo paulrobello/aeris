@@ -107,6 +107,10 @@ export function parseSimulatorConfiguration(
     simulation.flockAvoidance === undefined
       ? DEFAULT_PRESET.simulation.flockAvoidance
       : finiteNumber(simulation.flockAvoidance, 0, 3);
+  const predatorEnabled =
+    simulation.predatorEnabled === undefined
+      ? false
+      : simulation.predatorEnabled;
   const numbers = {
     count: finiteNumber(simulation.count, 120, 2400),
     flockCount,
@@ -135,6 +139,7 @@ export function parseSimulatorConfiguration(
     !ENVIRONMENTS.includes(value.environment as EnvironmentMode) ||
     !POINTER_MODES.includes(value.pointerMode as PointerMode) ||
     !PRESET_IDS.includes(value.activePreset as PresetId) ||
+    typeof predatorEnabled !== "boolean" ||
     !["spectral", "aurora", "solar", "monochrome"].includes(
       visual.colorTheme as string,
     ) ||
@@ -153,6 +158,7 @@ export function parseSimulatorConfiguration(
       count: Math.round(numbers.count!),
       flockCount: Math.round(numbers.flockCount!),
       flockAvoidance: numbers.flockAvoidance!,
+      predatorEnabled,
       separation: numbers.separation!,
       alignment: numbers.alignment!,
       cohesion: numbers.cohesion!,
@@ -223,7 +229,9 @@ export const useSimulatorStore = create<SimulatorState>((set) => ({
       simulation: { ...state.simulation, ...patch },
       activePreset: state.activePreset,
       resetToken:
-        patch.count === undefined && patch.flockCount === undefined
+        patch.count === undefined &&
+        patch.flockCount === undefined &&
+        patch.predatorEnabled === undefined
           ? state.resetToken
           : state.resetToken + 1,
     })),
