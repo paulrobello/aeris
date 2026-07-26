@@ -5,33 +5,16 @@ import test from "node:test";
 const developmentPreviewMeta =
   /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
+async function readPrerenderedHtml() {
+  return readFile(
+    new URL("../dist/client/index.html", import.meta.url),
+    "utf8",
   );
 }
 
-test("server-renders the finished AERIS simulator shell", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+test("prerenders the finished AERIS simulator shell", async () => {
+  const html = await readPrerenderedHtml();
 
-  const html = await response.text();
   assert.match(
     html,
     /<title>AERIS (?:—|&mdash;) Flock Dynamics Laboratory<\/title>/i,
@@ -58,7 +41,8 @@ test("removes all starter preview wiring from the application entrypoints", asyn
   assert.match(page, /<SimulatorApp \/>/);
   assert.match(layout, /AERIS — Flock Dynamics Laboratory/);
   assert.match(layout, /applicationName:\s*"AERIS"/);
-  assert.match(layout, /new URL\("\/og\.png", origin\)/);
+  assert.match(layout, /metadataBase:\s*new URL\(SITE_ORIGIN\)/);
+  assert.match(layout, /url:\s*"\/og\.png"/);
   assert.match(layout, /icon:\s*"\/favicon\.png"/);
   assert.match(layout, /themeColor:\s*"#050608"/);
   assert.match(css, /\.simulator-shell/);

@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { headers } from "next/headers";
 
 import "./globals.css";
+
+const SITE_ORIGIN = "https://aeris.pardev.net";
+const description =
+  "A cinematic, real-time boid laboratory for sculpting emergent flock behavior in three dimensions.";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,55 +17,41 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ??
-    requestHeaders.get("host") ??
-    "localhost:4203";
-  const protocol =
-    requestHeaders.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") ? "http" : "https");
-  const origin = new URL(`${protocol}://${host}`);
-  const description =
-    "A cinematic, real-time boid laboratory for sculpting emergent flock behavior in three dimensions.";
-
-  return {
-    metadataBase: origin,
-    title: {
-      default: "AERIS — Flock Dynamics Laboratory",
-      template: "%s — AERIS",
-    },
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_ORIGIN),
+  title: {
+    default: "AERIS — Flock Dynamics Laboratory",
+    template: "%s — AERIS",
+  },
+  description,
+  applicationName: "AERIS",
+  authors: [{ name: "AERIS Research Systems" }],
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+  },
+  openGraph: {
+    title: "AERIS — Flock Dynamics Laboratory",
     description,
-    applicationName: "AERIS",
-    authors: [{ name: "AERIS Research Systems" }],
-    icons: {
-      icon: "/favicon.png",
-      shortcut: "/favicon.png",
-    },
-    openGraph: {
-      title: "AERIS — Flock Dynamics Laboratory",
-      description,
-      siteName: "AERIS",
-      type: "website",
-      url: origin,
-      images: [
-        {
-          url: new URL("/og.png", origin),
-          width: 1672,
-          height: 941,
-          alt: "AERIS spectral boid flock forming a luminous vortex",
-        },
-      ],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "AERIS — Flock Dynamics Laboratory",
-      description,
-      images: [new URL("/og.png", origin)],
-    },
-  };
-}
+    siteName: "AERIS",
+    type: "website",
+    url: SITE_ORIGIN,
+    images: [
+      {
+        url: "/og.png",
+        width: 1672,
+        height: 941,
+        alt: "AERIS spectral boid flock forming a luminous vortex",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AERIS — Flock Dynamics Laboratory",
+    description,
+    images: ["/og.png"],
+  },
+};
 
 export const viewport: Viewport = {
   width: "device-width",
