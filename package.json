@@ -44,7 +44,7 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.0.13",
+    "vite": "8.1.5",
     "vitest": "^4.1.10"
   },
   "type": "module"
